@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 import vm from "node:vm";
+import { tokenFor } from "../src/background/bridge-token.js";
 import { syncScripts } from "../src/background/registration.js";
 import { installChrome, userscript } from "./helpers/chrome.mjs";
 
@@ -52,7 +53,7 @@ test("the prelude reports runs and exposes only granted APIs", async () => {
   };
   const b = context();
   vm.runInContext(mock.registered[1].js[0].code, b);
-  assert.deepEqual({ ...sent[0] }, { id: "B", type: "run" });
+  assert.deepEqual({ ...sent[0] }, { id: "B", token: await tokenFor("B"), type: "run" });
   assert.equal(await b.GM.getValue("k", 0), 41);
   assert.equal(b.GM.setValue, undefined);
   assert.equal(b.GM_addStyle, undefined);
@@ -143,7 +144,7 @@ test("the runtime provides GM_info, synchronous values, menus and resources", as
   assert.equal(context.GM_getValue("missing", "fallback"), "fallback");
   context.GM_setValue("count", 4);
   assert.equal(context.GM_getValue("count"), 4);
-  assert.deepEqual({ ...sent.at(-1) }, { id: "A", type: "value", op: "set", key: "count", value: 4 });
+  assert.deepEqual({ ...sent.at(-1) }, { id: "A", token: await tokenFor("A"), type: "value", op: "set", key: "count", value: 4 });
   assert.equal(context.GM_getResourceText("note"), "hi, there");
   let clicked = 0;
   const id = context.GM_registerMenuCommand("Do it", () => clicked++);
@@ -172,4 +173,14 @@ test("GM.xmlHttpRequest decodes responses and calls handlers", async () => {
   context.reply = () => ({ error: "Add // @connect b.com to request this site." });
   const failed = await new Promise(resolve => context.GM_xmlhttpRequest({ url: "https://b.com/", onerror: resolve }));
   assert.match(failed.error, /@connect b\.com/);
+});
+
+test("gives each script's world messaging and forgets worlds that are no longer used", async () => {
+  const page = script("P", "// @inject-into page\n");
+  await syncScripts([script("A"), script("B"), page]);
+  assert.deepEqual([...mock.worlds.keys()].sort(), ["", "A", "B"], "page-world scripts have no world of their own");
+  assert.ok([...mock.worlds.values()].every(config => config.messaging));
+  await syncScripts([script("B")]);
+  assert.deepEqual([...mock.worlds.keys()].sort(), ["", "B"]);
+  assert.ok(mock.calls.some(call => call.join(":") === "resetWorld:A"));
 });

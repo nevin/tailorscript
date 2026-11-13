@@ -1,6 +1,6 @@
 {
   "name": "tailorscript",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "description": "Tailor websites with your own JavaScript. A private userscript manager for Chrome.",
   "type": "module",
@@ -12,12 +12,17 @@
     "check": "node scripts/check.mjs",
     "vendor": "node scripts/vendor.mjs",
     "lint": "eslint .",
-    "test": "node --test \"tests/**/*.test.mjs\"",
-    "verify": "npm run lint && npm test && npm run check",
+    "test": "node --test --experimental-test-coverage --test-coverage-include=\"src/**\" --test-coverage-exclude=\"src/vendor/**\" --test-coverage-lines=80 --test-coverage-branches=80 --test-coverage-functions=85 \"tests/**/*.test.mjs\"",
+    "verify": "npm run lint && npm run typecheck && npm test && npm run check",
     "package": "node scripts/package.mjs",
     "release": "npm run verify && npm run package",
     "submit": "node scripts/submit.mjs",
-    "version": "node scripts/sync-version.mjs"
+    "version": "node scripts/sync-version.mjs",
+    "harness": "node scripts/harness.mjs",
+    "typecheck": "tsc -p .",
+    "vendor:check": "node scripts/vendor.mjs --check",
+    "dev": "node scripts/dev.mjs",
+    "test:e2e": "node --test tests/e2e/extension.e2e.mjs"
   },
   "devDependencies": {
     "@codemirror/autocomplete": "^6.20.4",
@@ -30,9 +35,13 @@
     "@codemirror/view": "^6.43.15",
     "@eslint/js": "^10.0.1",
     "@lezer/highlight": "^1.2.5",
+    "@types/chrome": "^0.3.7",
+    "acorn": "^8.19.0",
     "codemirror": "^6.0.2",
     "esbuild": "^0.28.2",
     "eslint": "^10.14.0",
-    "globals": "^17.14.0"
+    "globals": "^17.14.0",
+    "puppeteer": "^25.17.0",
+    "typescript": "^5.9.3"
   }
 }

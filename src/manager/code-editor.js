@@ -8,7 +8,8 @@ import {
   search, searchKeymap, showTooltip, snippetCompletion, snippets, StateField, syntaxHighlighting, syntaxTree, tags, ViewPlugin
 } from "../vendor/codemirror/codemirror.js";
 import { userscriptSnippets } from "./gm-api.js";
-import { completeAt, diagnose, hoverAt, metadataLines, minimalChange, signatureAt } from "./intellisense.js";
+import { metadataField, signatureInState } from "./editor-state.js";
+import { completeAt, diagnose, hoverAt, minimalChange } from "./intellisense.js";
 
 const notCode = ["LineComment", "BlockComment", "String", "TemplateString", "RegExp"];
 
@@ -20,7 +21,7 @@ function element(tag, className, text) {
 }
 
 function userscriptSource(context) {
-  const result = completeAt(context.state.doc.toString(), context.pos, context.explicit);
+  const result = completeAt(context.state.doc.toString(), context.pos, context.explicit, context.state.field(metadataField));
   if (!result) return null;
   if (result.kind === "api" && notCode.includes(syntaxTree(context.state).resolveInner(context.pos, -1).name)) return null;
   return { from: result.from, options: result.options, validFor: /^[\w$.-]*$/ };
@@ -50,11 +51,14 @@ const metadataDecorations = ViewPlugin.fromClass(class {
   }
 
   update(update) {
-    if (update.docChanged) this.decorations = this.build(update.state);
+    if (!update.docChanged) return;
+    // Edits below the header keep the same header, so only its positions need to move.
+    this.decorations = update.state.field(metadataField) === update.startState.field(metadataField)
+      ? this.decorations.map(update.changes) : this.build(update.state);
   }
 
   build(state) {
-    const { block, lines } = metadataLines(state.doc.toString());
+    const { block, lines } = state.field(metadataField);
     if (!block) return Decoration.none;
     const marks = [Decoration.line({ class: "cm-meta-fence" }).range(state.doc.lineAt(block.from).from)];
     for (const line of lines) {
@@ -75,7 +79,7 @@ function docTooltip(title, doc) {
 }
 
 const hovers = hoverTooltip((view, pos) => {
-  const info = hoverAt(view.state.doc.toString(), pos);
+  const info = hoverAt(view.state.doc.toString(), pos, view.state.field(metadataField));
   return info && { pos: info.from, end: info.to, above: true, create: () => docTooltip(info.title, info.doc) };
 });
 
@@ -83,7 +87,7 @@ const hovers = hoverTooltip((view, pos) => {
 function signatureTooltip(state) {
   const { main } = state.selection;
   if (!main.empty) return null;
-  const help = signatureAt(state.doc.toString(), main.head);
+  const help = signatureInState(state, main.head);
   if (!help) return null;
   return {
     pos: main.head,
@@ -109,12 +113,17 @@ const signatureHints = StateField.define({
   provide: field => showTooltip.from(field)
 });
 
+/**
+ * @param {HTMLElement} parent
+ * @param {{ onChange?: () => void, onCursor?: (position: { line: number, column: number }) => void,
+ *   onDiagnostics?: (found: { severity: string, message: string }[]) => void }} [handlers]
+ */
 export function createCodeEditor(parent, { onChange, onCursor, onDiagnostics } = {}) {
   let runError = null;
 
   const problems = linter(view => {
     const length = view.state.doc.length;
-    const found = diagnose(view.state.doc.toString(), { runError }).map(({ from, to, severity, message, actions }) => ({
+    const found = diagnose(view.state.doc.toString(), { runError, meta: view.state.field(metadataField) }).map(({ from, to, severity, message, actions }) => ({
       from: Math.min(from, length),
       to: Math.min(Math.max(to, from), length),
       severity,
@@ -129,7 +138,7 @@ export function createCodeEditor(parent, { onChange, onCursor, onDiagnostics } =
     lineNumbers(), highlightActiveLineGutter(), foldGutter(), lintGutter(), highlightSpecialChars(), history(), drawSelection(),
     dropCursor(), EditorState.allowMultipleSelections.of(true), indentOnInput(), indentUnit.of("  "), EditorState.tabSize.of(2),
     syntaxHighlighting(highlightStyle), bracketMatching(), closeBrackets(), rectangularSelection(), crosshairCursor(),
-    highlightActiveLine(), highlightSelectionMatches(), search({ top: true }), javascript(), metadataDecorations,
+    highlightActiveLine(), highlightSelectionMatches(), search({ top: true }), javascript(), metadataField, metadataDecorations,
     autocompletion({
       override: [userscriptSource, localCompletionSource, ifNotIn(notCode, scopeCompletionSource(globalThis)), snippetSource],
       icons: true

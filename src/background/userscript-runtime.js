@@ -25,7 +25,7 @@ export function installRuntime(config) {
     return;
   }
 
-  const send = message => chrome.runtime.sendMessage({ id: config.id, ...message });
+  const send = message => chrome.runtime.sendMessage({ id: config.id, token: config.token, ...message });
   const report = message => {
     try {
       send(message).catch(() => {});

@@ -1,3 +1,5 @@
+/** @typedef {{ chunks: number, savedAt: number, count: number }} SyncBackup */
+
 const encoder = new TextEncoder();
 const syncItemBytes = 8000;
 
@@ -27,7 +29,7 @@ export async function backupToSync(scripts) {
   if (bytes > chrome.storage.sync.QUOTA_BYTES - 1000) {
     throw new Error("The library is too large for Chrome sync. Use Export backup instead.");
   }
-  const { syncBackup: previous } = await chrome.storage.sync.get("syncBackup");
+  const { syncBackup: previous } = /** @type {{ syncBackup?: SyncBackup }} */ (await chrome.storage.sync.get("syncBackup"));
   await chrome.storage.sync.set({
     ...Object.fromEntries(chunks.map((text, index) => [`backup:${index}`, text])),
     syncBackup: { chunks: chunks.length, savedAt, count: scripts.length }
@@ -39,7 +41,7 @@ export async function backupToSync(scripts) {
 }
 
 export async function readSyncBackup() {
-  const { syncBackup } = await chrome.storage.sync.get("syncBackup");
+  const { syncBackup } = /** @type {{ syncBackup?: SyncBackup }} */ (await chrome.storage.sync.get("syncBackup"));
   if (!syncBackup?.chunks) throw new Error("No Chrome sync backup was found for this profile.");
   const keys = Array.from({ length: syncBackup.chunks }, (_, index) => `backup:${index}`);
   const stored = await chrome.storage.sync.get(keys);

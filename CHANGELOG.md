@@ -4,6 +4,8 @@ All notable changes to Tailorscript are recorded here. Versions follow [Semantic
 
 ## [Unreleased]
 
+## [0.5.0]
+
 ### Added
 - Install page for `.user.js` links and **Install from URL…**, showing sites, APIs, loaded code, the source and changes from an installed copy. Optional one-click installs from Greasy Fork, OpenUserJS and GitHub.
 - Automatic updates from `@updateURL`/`@downloadURL` every 12 hours. Updates that need new access, APIs or libraries, or would replace local edits, wait for review with a diff.
@@ -15,6 +17,8 @@ All notable changes to Tailorscript are recorded here. Versions follow [Semantic
 - Keyboard shortcut to pause or resume all scripts.
 - CodeMirror-based editor with completions for metadata, GM APIs, local variables, browser APIs and userscript snippets; inline problems with quick fixes (missing `@grant` or `@connect`, unused or unsupported grants, unknown metadata, the last run's error); hover docs; parameter hints; folding, multiple cursors and regex find and replace.
 - `npm run vendor` to rebuild the vendored CodeMirror bundle.
+- **Copy diagnostics** in Settings & backup: versions, settings, registration issues and recent errors for bug reports, never script code.
+- End-to-end tests that load the extension in a real Chrome (`npm run test:e2e`), type checking with JSDoc and `@types/chrome` (`npm run typecheck`), a coverage threshold, `npm run dev` with rebuild and reload, `npm run harness` for UI work in a plain browser tab, a CI check that the vendored bundle matches a fresh build, and Dependabot.
 
 - Build, check, package and Chrome Web Store submission scripts, CI and release workflows.
 - ESLint configuration and a `node:test` suite covering parsing, registration, the service worker, sync backup, packaging and submission.
@@ -26,10 +30,17 @@ All notable changes to Tailorscript are recorded here. Versions follow [Semantic
 - Updates downloaded over plain http, or that load http code, always wait for review. The install page and editor flag http downloads, and the editor offers a "Use https" fix.
 - `GM_xmlhttpRequest` checks `@connect` against the final address after redirects.
 - Installing a script from a different address that reuses an installed script's name and namespace now shows a warning, because it would inherit that script's stored data.
-- Scripts are identified only by the world ID Chrome assigns; `@resource` data URLs keep only a plain media type.
+- Each script signs its messages with a private token, so one script can't use another's stored values or `@connect` hosts. `@resource` data URLs keep only a plain media type.
+- The service worker checks every message's fields against one schema before acting on it.
 - CI and release workflows run with read-only repository access and actions pinned to exact commits.
 
+### Fixed
+- GM APIs that talk to the extension (stored values, `GM_xmlhttpRequest`, notifications, `GM_openInTab`, menu commands) and run reports now work in Chrome. Each script's world is set up for messaging, which Chrome requires per world.
+
 ### Changed
+- Each script is stored under its own key with a storage version number, so saving one script no longer rewrites the others. Existing libraries upgrade automatically.
+- The editor re-reads the metadata header only when it changes and finds parameter hints from its syntax tree, so long scripts stay responsive.
+- The service worker and manager are split into smaller modules.
 - Unsupported `@grant` values are now a warning instead of an error.
 - Source reorganised under `src/` into background, manager, popup and shared modules.
 - Manager redesign: full-height layout, on/off switches, status dots and pills, filter chips, match rules shown as chips, a clear error callout with Go to line, and overflow menus for library and script actions.

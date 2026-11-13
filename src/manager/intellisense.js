@@ -6,30 +6,32 @@ import { gmApis, ignoredKeys, metadataKeys, metadataValues, signature } from "./
 
 const familyOf = name => Object.keys(grantFamilies).find(family => grantFamilies[family].includes(name));
 
-// The metadata block's lines with the offsets of each key and value.
+// The metadata block's lines with the offsets of each key and value. Scanning stops at the end of the block, so the
+// cost depends on the header, not the length of the script.
 export function metadataLines(source) {
   const lines = [];
-  let offset = 0;
   let inside = false;
   let block = null;
-  for (const text of source.split("\n")) {
-    const from = offset;
-    offset += text.length + 1;
+  for (let from = 0; from <= source.length;) {
+    const end = source.indexOf("\n", from);
+    const to = end === -1 ? source.length : end;
+    const text = source.slice(from, to);
     if (!inside && /^\s*\/\/\s*==UserScript==\s*$/.test(text)) {
       inside = true;
       block = { from, to: source.length };
-      continue;
-    }
-    if (!inside) continue;
-    if (/^\s*\/\/\s*==\/UserScript==/.test(text)) {
-      block.to = from + text.length;
+    } else if (inside && /^\s*\/\/\s*==\/UserScript==/.test(text)) {
+      block.to = to;
       break;
+    } else if (inside) {
+      const entry = text.match(/^(\s*\/\/\s*@)([\w:.-]+)(\s*)(.*?)\s*$/);
+      if (entry) {
+        const keyFrom = from + entry[1].length;
+        const valueFrom = keyFrom + entry[2].length + entry[3].length;
+        lines.push({ key: entry[2], value: entry[4], from, to, keyFrom, keyTo: keyFrom + entry[2].length, valueFrom, valueTo: valueFrom + entry[4].length });
+      }
     }
-    const entry = text.match(/^(\s*\/\/\s*@)([\w:.-]+)(\s*)(.*?)\s*$/);
-    if (!entry) continue;
-    const keyFrom = from + entry[1].length;
-    const valueFrom = keyFrom + entry[2].length + entry[3].length;
-    lines.push({ key: entry[2], value: entry[4], from, to: from + text.length, keyFrom, keyTo: keyFrom + entry[2].length, valueFrom, valueTo: valueFrom + entry[4].length });
+    if (end === -1) break;
+    from = end + 1;
   }
   return { block, lines };
 }
@@ -38,6 +40,7 @@ function inBlock(block, pos) {
   return block && pos > block.from && pos <= block.to;
 }
 
+/** @param {string} source @returns {any[]} acorn tokens */
 function tokens(source) {
   const list = [];
   try {
@@ -49,8 +52,7 @@ function tokens(source) {
 }
 
 // Every place the code names a GM API or unsafeWindow, skipping property accesses such as obj.GM_x.
-export function apiUsages(source) {
-  const list = tokens(source);
+export function apiUsages(source, list = tokens(source)) {
   const usages = [];
   list.forEach((token, index) => {
     if (token.type.label !== "name" || list[index - 1]?.type.label === ".") return;
@@ -111,10 +113,11 @@ function apiOption(name) {
 }
 
 // Completions for metadata keys and values inside the header, or GM APIs in the code.
-export function completeAt(source, pos, explicit = false) {
+// meta is metadataLines(source), passed in when the caller already has it.
+export function completeAt(source, pos, explicit = false, meta = metadataLines(source)) {
   const lineStart = source.lastIndexOf("\n", pos - 1) + 1;
   const before = source.slice(lineStart, pos);
-  const { block, lines } = metadataLines(source);
+  const { block, lines } = meta;
   if (inBlock(block, pos)) {
     const value = before.match(/^\s*\/\/\s*@([\w:.-]+)\s+(\S*)$/);
     if (value) {
@@ -164,9 +167,20 @@ function deleteLine(source, line) {
 }
 
 // Problems shown in the editor, each with a range and, where one is obvious, a quick fix.
-export function diagnose(source, { runError } = {}) {
+/**
+ * @typedef {object} Problem
+ * @property {number} from
+ * @property {number} to
+ * @property {"error" | "warning" | "info" | "hint"} severity
+ * @property {string} message
+ * @property {{ name: string, change: { from: number, to: number, insert: string } }[]} [actions]
+ */
+
+/** @returns {Problem[]} @param {string} source @param {{ runError?: { line: number, message: string }, meta?: ReturnType<typeof metadataLines> }} [options] */
+export function diagnose(source, { runError, meta = metadataLines(source) } = {}) {
+  /** @type {Problem[]} */
   const found = [];
-  const { block, lines } = metadataLines(source);
+  const { block, lines } = meta;
   try {
     parse(source, { ecmaVersion: "latest" });
   } catch (error) {
@@ -200,9 +214,13 @@ export function diagnose(source, { runError } = {}) {
   }
 
   if (metadata) {
-    const usages = apiUsages(source);
+    const list = tokens(source);
+    const usages = apiUsages(source, list);
+    // A script can call the same API many times; each fix for it is the same edit, so work it out once.
+    const grantFixes = new Map();
     for (const usage of usages.filter(({ name }) => needsGrant(name, metadata.grants))) {
-      const change = minimalChange(source, addGrants(source, [usage.name]));
+      if (!grantFixes.has(usage.name)) grantFixes.set(usage.name, minimalChange(source, addGrants(source, [usage.name])));
+      const change = grantFixes.get(usage.name);
       found.push({
         from: usage.from, to: usage.to, severity: "warning",
         message: `${usage.name} needs @grant ${usage.name}. Without it, it isn’t defined.`,
@@ -221,7 +239,7 @@ export function diagnose(source, { runError } = {}) {
         });
       }
     }
-    for (const request of requestUrls(source)) {
+    for (const request of requestUrls(list)) {
       const host = request.host;
       const page = metadata.targets.matches.some(pattern => {
         const site = pattern.match(/^[^:]+:\/\/([^/]+)/)[1];
@@ -247,8 +265,7 @@ export function diagnose(source, { runError } = {}) {
 }
 
 // String URLs passed as url: in GM_xmlhttpRequest and GM.xmlHttpRequest calls.
-function requestUrls(source) {
-  const list = tokens(source);
+function requestUrls(list) {
   const found = [];
   list.forEach((token, index) => {
     const isCall = (token.value === "GM_xmlhttpRequest" && list[index - 1]?.type.label !== ".") ||
@@ -281,8 +298,8 @@ function wordAt(source, pos) {
 }
 
 // Documentation for the metadata key, grant or GM API under the pointer.
-export function hoverAt(source, pos) {
-  const { block, lines } = metadataLines(source);
+export function hoverAt(source, pos, meta = metadataLines(source)) {
+  const { block, lines } = meta;
   if (inBlock(block, pos)) {
     const line = lines.find(item => pos >= item.from && pos <= item.to);
     if (!line) return null;
@@ -309,9 +326,17 @@ export function hoverAt(source, pos) {
   return null;
 }
 
-// The GM call the cursor is inside and which argument it's on, for the parameter hint.
-export function signatureAt(source, pos) {
-  if (inBlock(metadataLines(source).block, pos)) return null;
+// The parameter hint for argument number `argument` (from 0) of a GM call, or null when name isn't a GM function.
+export function signatureFor(name, argument) {
+  const api = gmApis[name];
+  if (!api || api.kind === "property") return null;
+  return { name, params: api.params, returns: api.returns, active: Math.min(argument, api.params.length - 1), doc: api.doc };
+}
+
+// The GM call the cursor is inside and which argument it's on, for the parameter hint. The editor finds the call
+// with CodeMirror's incremental syntax tree instead (editor-state.js); this text version backs the tests and fallbacks.
+export function signatureAt(source, pos, meta = metadataLines(source)) {
+  if (inBlock(meta.block, pos)) return null;
   const list = tokens(source.slice(0, pos));
   let depth = 0;
   let argument = 0;
@@ -329,9 +354,7 @@ export function signatureAt(source, pos) {
       const callee = list[index - 1];
       let name = callee?.type.label === "name" ? callee.value : "";
       if (list[index - 2]?.type.label === "." && list[index - 3]?.value === "GM") name = `GM.${name}`;
-      const api = gmApis[name];
-      if (!api || api.kind === "property") return null;
-      return { name, params: api.params, returns: api.returns, active: Math.min(argument, api.params.length - 1), doc: api.doc };
+      return signatureFor(name, argument);
     } else if (label === "," && depth === 0) argument++;
   }
   return null;

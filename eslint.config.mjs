@@ -21,8 +21,18 @@ export default [
     languageOptions: { globals: { ...globals.browser, ...globals.webextensions } }
   },
   {
+    // The harness mock runs as a classic script in a browser page.
+    files: ["scripts/harness/*.js"],
+    languageOptions: { sourceType: "script", globals: globals.browser }
+  },
+  {
     files: ["scripts/**/*.mjs", "tests/**/*.mjs", "eslint.config.mjs"],
     languageOptions: { globals: globals.node }
+  },
+  {
+    // End-to-end tests pass functions to Puppeteer that run inside browser pages.
+    files: ["tests/e2e/**/*.mjs"],
+    languageOptions: { globals: { ...globals.browser, GM_addStyle: "readonly" } }
   },
   {
     // Tests install an in-memory chrome object before importing extension code.

@@ -29,6 +29,11 @@ export async function fetchUpdate(script) {
 }
 
 // Updates apply on their own only when they need nothing new from the user.
+/**
+ * @param {import("../shared/types.js").Metadata} current
+ * @param {import("../shared/types.js").Metadata} next
+ * @param {{ edited?: boolean, autoUpdate?: boolean, urls?: { check?: string, download?: string } }} options
+ */
 export function reviewReasons(current, next, { edited, autoUpdate, urls = {} }) {
   const reasons = [];
   // Code fetched over plain http could have been swapped on the way, so it never installs unattended.

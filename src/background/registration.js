@@ -1,5 +1,7 @@
 import { allows, grantFamilies, originsFor, parseSource, syncValueGrants } from "../shared/userscript.js";
+import { tokenFor } from "./bridge-token.js";
 import { installRuntime } from "./userscript-runtime.js";
+import { getLocal } from "../shared/storage.js";
 
 function regExpList(rules) {
   return `[${rules.map(({ source, flags }) => `new RegExp(${JSON.stringify(source)}, ${JSON.stringify(flags)})`).join(", ")}]`;
@@ -15,7 +17,15 @@ function guarded(source, guard) {
   return `(function () {${strict ? ' "use strict";' : ""} if (!${check}) return; ${source}\n}).call(this);`;
 }
 
-export function buildInjection(script, metadata, { deps = {}, values } = {}) {
+/**
+ * @param {import("../shared/types.js").Script} script
+ * @param {import("../shared/types.js").Metadata} metadata
+ * @param {{ deps?: import("../shared/types.js").Deps, values?: Record<string, unknown>, token?: string }} [stored]
+ *   token proves the script's identity to the service worker; page-world scripts never get one.
+ * @returns {{ world: "MAIN" | "USER_SCRIPT", worldId?: string,
+ *   js: [chrome.userScripts.ScriptSource, ...chrome.userScripts.ScriptSource[]] }}
+ */
+export function buildInjection(script, metadata, { deps = {}, values, token } = {}) {
   if (deps.error) throw new Error(deps.error);
   const requires = metadata.requires.map(url => {
     const entry = deps.requires?.find(item => item.url === url);
@@ -31,6 +41,7 @@ export function buildInjection(script, metadata, { deps = {}, values } = {}) {
   const config = {
     id: script.id,
     page,
+    token: page ? undefined : token,
     allowed: Object.keys(grantFamilies).filter(family => allows(metadata.grants, family)),
     values: metadata.grants.some(grant => syncValueGrants.includes(grant)) ? values ?? {} : null,
     resources,
@@ -57,14 +68,36 @@ export function buildInjection(script, metadata, { deps = {}, values } = {}) {
 
 async function storedExtras(scripts) {
   const keys = scripts.flatMap(script => [`deps:${script.id}`, `values:${script.id}`]);
-  return keys.length ? chrome.storage.local.get(keys) : {};
+  return keys.length ? getLocal(keys) : {};
 }
 
 // Everything Chrome needs to run one script now, used by Run now in the popup.
 export async function injectionFor(script) {
   const metadata = parseSource(script.source);
   const stored = await storedExtras([script]);
-  return { metadata, ...buildInjection(script, metadata, { deps: stored[`deps:${script.id}`], values: stored[`values:${script.id}`] }) };
+  return {
+    metadata,
+    ...buildInjection(script, metadata,
+      { deps: stored[`deps:${script.id}`], values: stored[`values:${script.id}`], token: await tokenFor(script.id) })
+  };
+}
+
+// Each script runs in its own world, and Chrome only gives a world chrome.runtime.sendMessage once that world is
+// configured for messaging. The default world's setting doesn't carry over to worlds with an ID.
+export function enableMessaging(worldId) {
+  return chrome.userScripts.configureWorld({ worldId, messaging: true });
+}
+
+// Forgets the settings of worlds whose scripts are gone or no longer registered.
+async function resetUnusedWorlds(api, used) {
+  try {
+    const configured = await api.getWorldConfigurations?.() ?? [];
+    for (const { worldId } of configured) {
+      if (worldId && !used.has(worldId)) await api.resetWorldConfiguration(worldId);
+    }
+  } catch (error) {
+    console.warn(error.message);
+  }
 }
 
 export async function syncScripts(scripts, settings = {}) {
@@ -110,7 +143,8 @@ export async function syncScripts(scripts, settings = {}) {
         ...(targets.excludeGlobs.length ? { excludeGlobs: targets.excludeGlobs } : {}),
         runAt: metadata.runAt,
         allFrames: metadata.allFrames,
-        ...buildInjection(script, metadata, { deps: stored[`deps:${script.id}`], values: stored[`values:${script.id}`] })
+        ...buildInjection(script, metadata,
+          { deps: stored[`deps:${script.id}`], values: stored[`values:${script.id}`], token: await tokenFor(script.id) })
       });
     } catch (error) {
       issues[script.id] = error.message;
@@ -141,6 +175,7 @@ export async function syncScripts(scripts, settings = {}) {
   const active = [];
   for (const registration of registrations) {
     try {
+      if (registration.worldId) await enableMessaging(registration.worldId);
       if (registered.has(registration.id)) await api.update([registration]);
       else await api.register([registration]);
       active.push(registration.id);
@@ -156,5 +191,7 @@ export async function syncScripts(scripts, settings = {}) {
     }
   }
 
+  // Manual scripts keep their world so Run now doesn't have to set it up each time.
+  await resetUnusedWorlds(api, new Set([...active, ...manual]));
   return { active, manual, issues, error: errors.join(" ") };
 }

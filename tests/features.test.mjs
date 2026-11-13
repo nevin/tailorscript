@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { before, test } from "node:test";
-import { installChrome, installFetch, userscript } from "./helpers/chrome.mjs";
+import { installChrome, installFetch, userscript, storedScripts } from "./helpers/chrome.mjs";
 
 const managerUrl = "chrome-extension://test/manager/index.html";
 const popupUrl = "chrome-extension://test/popup/popup.html";
@@ -23,11 +23,16 @@ before(async () => {
 const call = (message, url = managerUrl) => new Promise(resolve => {
   assert.equal(listeners.message(message, { url }, resolve), true);
 });
-const fromScript = (message, sender) => new Promise(resolve => {
-  if (!listeners.userScriptMessage(message, sender, resolve)) setTimeout(resolve, 20);
-});
+// Sends a message as the script named by sender.script, signed the way its injected runtime would sign it.
+const fromScript = async (message, { script, ...sender }) => {
+  const { tokenFor } = await import("../src/background/bridge-token.js");
+  const signed = { id: script, token: await tokenFor(script), ...message };
+  return new Promise(resolve => {
+    if (!listeners.userScriptMessage(signed, sender, resolve)) setTimeout(resolve, 20);
+  });
+};
 const settle = () => new Promise(resolve => setTimeout(resolve, 30));
-const find = id => local.scripts.find(script => script.id === id);
+const find = id => storedScripts().find(script => script.id === id);
 const versioned = (version, extra = "") => userscript("run();", `// @version     ${version}\n// @namespace   x.org\n${extra}`);
 
 test("saving downloads @require and @resource files once", async () => {
@@ -59,7 +64,7 @@ test("installs from a URL, then replaces the same script on reinstall", async ()
 });
 
 test("updates apply automatically unless they need review", async () => {
-  const id = local.scripts.find(script => script.installUrl).id;
+  const id = storedScripts().find(script => script.installUrl).id;
   network.routes["https://x.org/s.user.js"] = versioned("1.2");
   let result = await call({ type: "check-updates" });
   assert.deepEqual(result.state.updateSummary.updated, ["Test"]);
@@ -101,7 +106,7 @@ test("updates apply automatically unless they need review", async () => {
 test("GM_xmlhttpRequest only reaches the page's site and @connect hosts", async () => {
   await call({ type: "save", id: "x1", script: { source: userscript("x;", "// @grant GM_xmlhttpRequest\n// @connect example.org\n"), enabled: true } });
   network.routes["https://api.example.org/data"] = { body: "hello", status: 201, headers: { "content-type": "text/plain" } };
-  const sender = { userScriptWorldId: "x1", url: "https://a.com/page" };
+  const sender = { script: "x1", url: "https://a.com/page" };
   const ok = await fromScript({ type: "xhr", requestId: "r1", request: { url: "https://api.example.org/data", method: "POST", body: { text: "q" }, headers: { "X-Test": "1" } } }, sender);
   assert.equal(ok.value.status, 201);
   assert.equal(Buffer.from(ok.value.body, "base64").toString(), "hello");
@@ -110,12 +115,12 @@ test("GM_xmlhttpRequest only reaches the page's site and @connect hosts", async 
   assert.equal(request.headers.get("x-test"), "1");
   const blocked = await fromScript({ type: "xhr", requestId: "r2", request: { url: "https://evil.test/" } }, sender);
   assert.match(blocked.error, /@connect evil\.test/);
-  const ungranted = await fromScript({ type: "xhr", requestId: "r3", request: { url: "https://a.com/" } }, { userScriptWorldId: "d1", url: "https://a.com/" });
+  const ungranted = await fromScript({ type: "xhr", requestId: "r3", request: { url: "https://a.com/" } }, { script: "d1", url: "https://a.com/" });
   assert.match(ungranted.error, /@grant GM_xmlhttpRequest/);
 });
 
 test("records menu commands, runs them in the page and counts runs on the badge", async () => {
-  const sender = { userScriptWorldId: "x1", url: "https://a.com/", tab: { id: 9 }, frameId: 0, documentId: "doc9" };
+  const sender = { script: "x1", url: "https://a.com/", tab: { id: 9 }, frameId: 0, documentId: "doc9" };
   await fromScript({ type: "run" }, sender);
   await fromScript({ type: "menu", op: "add", commandId: "1", caption: "Say hi" }, sender);
   await settle();
@@ -152,7 +157,7 @@ test("excludes a site from the popup without touching the rest of the script", a
 
 test("opens and closes only tabs a script opened, and shows notifications", async () => {
   await call({ type: "save", id: "t1", script: { source: userscript("x;", "// @grant GM_openInTab\n// @grant GM_notification\n"), enabled: true } });
-  const sender = { userScriptWorldId: "t1", tab: { id: 2, index: 0, windowId: 1 } };
+  const sender = { script: "t1", tab: { id: 2, index: 0, windowId: 1 } };
   const opened = await fromScript({ type: "open-tab", url: "https://b.com/", active: false }, sender);
   assert.equal(typeof opened.value, "number");
   assert.deepEqual(calls.findLast(([name]) => name === "tabCreate")[1], { url: "https://b.com/", active: false, openerTabId: 2, index: 1, windowId: 1 });
@@ -181,13 +186,14 @@ test("the pause shortcut toggles every script and the install redirect is regist
 
 test("security: @connect is checked after redirects", async () => {
   network.routes["https://api.example.org/hop"] = { body: "secret", redirectedTo: "https://evil.test/landing" };
-  const reply = await fromScript({ type: "xhr", requestId: "r9", request: { url: "https://api.example.org/hop" } }, { userScriptWorldId: "x1", url: "https://a.com/" });
+  const reply = await fromScript({ type: "xhr", requestId: "r9", request: { url: "https://api.example.org/hop" } }, { script: "x1", url: "https://a.com/" });
   assert.match(reply.error, /redirected to evil\.test/);
   assert.equal(reply.value, undefined);
 });
 
-test("security: scripts are identified only by the world ID Chrome sets", async () => {
-  assert.equal(listeners.userScriptMessage({ type: "value", op: "list", id: "x1" }, {}, () => {}), false);
+test("security: a script's ID alone isn't enough to use its APIs", async () => {
+  const reply = await new Promise(resolve => listeners.userScriptMessage({ type: "value", op: "list", id: "x1" }, {}, resolve));
+  assert.match(reply.error, /didn’t come from a Tailorscript script/);
 });
 
 test("security: resource data URLs keep only a plain media type", async () => {

@@ -8,7 +8,7 @@ export const distDir = path.join(root, "dist");
 export const releaseDir = path.join(root, "release");
 
 // Files that never belong in the shipped extension.
-const ignored = [/^\./, /\.map$/, /^Thumbs\.db$/];
+const ignored = [/^\./, /\.map$/, /\.d\.m?ts$/, /^Thumbs\.db$/];
 
 export async function readJson(file) {
   return JSON.parse(await readFile(file, "utf8"));

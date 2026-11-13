@@ -1,0 +1,17 @@
+{
+  // Type-checks the plain JavaScript in src/ against Chrome's and the DOM's API types. Nothing is compiled.
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "target": "es2023",
+    "module": "es2022",
+    "moduleResolution": "bundler",
+    "lib": ["es2024", "dom", "dom.iterable"],
+    "types": ["chrome"],
+    "strict": false,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*.js"],
+  "exclude": ["src/vendor/**"]
+}

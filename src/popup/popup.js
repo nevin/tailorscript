@@ -1,29 +1,30 @@
+import { $ } from "../shared/dom.js";
 import { timeAgo } from "../shared/format.js";
 import { findScriptsUrl, installPageUrl, isUserscriptUrl } from "../shared/install.js";
-import { readScripts, readSettings } from "../shared/storage.js";
+import { getSession, readScripts, readSettings } from "../shared/storage.js";
 import { parseSource, runsOn } from "../shared/userscript.js";
 
 const managerUrl = chrome.runtime.getURL("manager/index.html");
-const list = document.querySelector("#scripts");
-const empty = document.querySelector("#empty");
-const emptyText = document.querySelector("#empty-text");
-const count = document.querySelector("#count");
-const create = document.querySelector("#create");
-const notice = document.querySelector("#notice");
-const paused = document.querySelector("#paused");
-const reload = document.querySelector("#reload");
-const check = document.querySelector("#check");
-const find = document.querySelector("#find");
-const setup = document.querySelector("#setup");
+const list = $("#scripts");
+const empty = $("#empty");
+const emptyText = $("#empty-text");
+const count = $("#count");
+const create = $("#create", HTMLButtonElement);
+const notice = $("#notice");
+const paused = $("#paused", HTMLInputElement);
+const reload = $("#reload", HTMLButtonElement);
+const check = $("#check", HTMLButtonElement);
+const find = $("#find", HTMLButtonElement);
+const setup = $("#setup");
 
 const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 const url = /^https?:/.test(tab?.url ?? "") ? new URL(tab.url) : null;
-document.querySelector("#page").textContent = url?.host ?? "This page can’t run userscripts";
+$("#page").textContent = url?.host ?? "This page can’t run userscripts";
 reload.disabled = !url;
 check.disabled = !url;
 create.hidden = !url;
 find.hidden = !url;
-document.querySelector("#install-banner").hidden = !isUserscriptUrl(tab?.url);
+$("#install-banner").hidden = !isUserscriptUrl(tab?.url);
 let expanded;
 
 async function send(message) {
@@ -109,7 +110,7 @@ function renderScript(script, runs, menus, session, settings) {
     }, `“${script.name}” won’t run on ${url.hostname}. Reload to apply.`)));
   const more = button("⋯", () => {
     expanded = actions.hidden ? script.id : undefined;
-    for (const other of list.querySelectorAll(".actions")) other.hidden = other !== actions || !actions.hidden;
+    for (const other of /** @type {NodeListOf<HTMLElement>} */ (list.querySelectorAll(".actions"))) other.hidden = other !== actions || !actions.hidden;
     for (const other of list.querySelectorAll(".more")) other.setAttribute("aria-expanded", String(other === more && !actions.hidden));
   }, "more");
   more.setAttribute("aria-label", `More actions for ${script.name}`);
@@ -138,11 +139,11 @@ function renderScript(script, runs, menus, session, settings) {
 
 async function render() {
   const [scripts, settings, session] = await Promise.all([
-    readScripts(), readSettings(), chrome.storage.session.get(["registrationState", "tabRuns"])
+    readScripts(), readSettings(), getSession(["registrationState", "tabRuns"])
   ]);
   paused.checked = Boolean(settings.paused);
   setup.hidden = !session.registrationState?.setupNeeded;
-  const tabState = session.tabRuns?.[tab?.id] ?? {};
+  const tabState = session.tabRuns?.[tab?.id] ?? { scripts: {}, menus: {} };
   const runs = tabState.scripts ?? {};
   const menus = tabState.menus ?? {};
   const matching = url ? scripts.filter(script => runsOn(script.source, url) || runs[script.id] || menus[script.id]?.length) : [];
@@ -184,17 +185,17 @@ paused.addEventListener("change", async () => {
 });
 chrome.commands?.getAll().then(commands => {
   const shortcut = commands.find(command => command.name === "toggle-pause")?.shortcut;
-  if (shortcut) document.querySelector("#pause-label").title = `Shortcut: ${shortcut}`;
+  if (shortcut) $("#pause-label").title = `Shortcut: ${shortcut}`;
 });
 reload.addEventListener("click", async () => {
   await chrome.tabs.reload(tab.id);
   window.close();
 });
-document.querySelector("#open-settings").addEventListener("click", async () => {
+$("#open-settings", HTMLButtonElement).addEventListener("click", async () => {
   await chrome.tabs.create({ url: `chrome://extensions/?id=${chrome.runtime.id}` });
   window.close();
 });
-document.querySelector("#install-page").addEventListener("click", async () => {
+$("#install-page", HTMLButtonElement).addEventListener("click", async () => {
   await chrome.tabs.update(tab.id, { url: installPageUrl(tab.url) });
   window.close();
 });
@@ -204,7 +205,7 @@ find.addEventListener("click", async () => {
 });
 check.addEventListener("click", () => openManager({ diagnosticUrl: url.href, showDiagnostics: Date.now() }));
 create.addEventListener("click", () => openManager({ newScriptSite: `${url.origin}/*` }));
-document.querySelector("#manager").addEventListener("click", () => openManager());
+$("#manager", HTMLButtonElement).addEventListener("click", () => openManager());
 chrome.storage.onChanged.addListener(render);
 
 await render();

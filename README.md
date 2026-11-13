@@ -31,8 +31,9 @@ src/                 The extension, loadable as-is
   icons/             Logo sources (SVG) and the PNG sizes Chrome needs
   vendor/acorn/      Vendored JavaScript parser (MIT)
   vendor/codemirror/ Vendored CodeMirror 6 editor bundle (MIT), rebuilt with npm run vendor
-scripts/             Build, check, package and Web Store submission tools (Node built-ins only)
+scripts/             Build, check, package, dev and Web Store submission tools
 tests/               node:test suites with an in-memory Chrome API mock
+tests/e2e/           Tests that load the built extension in a real Chrome
 docs/                Architecture, publishing guide, store listing and privacy policy
 ```
 
@@ -45,9 +46,14 @@ See [docs/architecture.md](docs/architecture.md) for how the pieces talk to each
 | `npm run build` | Copies `src/` into a clean `dist/`, stamps the `package.json` version and validates the result. |
 | `npm run check` | Validates `src/`: manifest rules, icon sizes, version match, missing files and remote code. |
 | `npm run vendor` | Rebuilds `src/vendor/codemirror/` from the CodeMirror packages in `devDependencies`. Run it after updating them, and commit the result. |
+| `npm run dev` | Builds `dist/`, rebuilds when `src/` changes and reloads the unpacked extension. Load `dist/` once from `chrome://extensions`. |
+| `npm run harness` | Serves the manager, popup and install pages at `http://localhost:8767` with a mocked `chrome` API, for working on the UI in any browser. |
+| `npm run vendor:check` | Fails if the committed CodeMirror bundle differs from a fresh build. |
 | `npm run lint` | Runs ESLint. |
-| `npm test` | Runs the unit and integration tests. |
-| `npm run verify` | Lint, tests and check together, as CI runs them. |
+| `npm run typecheck` | Type-checks `src/` with TypeScript, using JSDoc types and `@types/chrome`. Nothing is compiled. |
+| `npm test` | Runs the unit and integration tests and fails below 80% line coverage of the modules they load. |
+| `npm run test:e2e` | Loads the built extension in Chrome for Testing and checks injection, the GM bridge, Run now, menu commands, the install redirect and the editor. Run `npx puppeteer browsers install chrome` once first. |
+| `npm run verify` | Lint, type check, tests and check together, as CI runs them. |
 | `npm run package` | Builds and writes a reproducible `release/tailorscript-<version>.zip` with a SHA-256 checksum. |
 | `npm run release` | `verify`, then `package`. |
 | `npm run submit` | Uploads the package to the Chrome Web Store. See [docs/publishing.md](docs/publishing.md). |

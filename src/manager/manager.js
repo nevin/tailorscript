@@ -1,13 +1,13 @@
+import { $ } from "../shared/dom.js";
 import { timeAgo } from "../shared/format.js";
-import { readScripts } from "../shared/storage.js";
-import { readSyncBackup } from "../shared/sync-backup.js";
-import { describeGrants, installOrigins, installPageUrl } from "../shared/install.js";
-import { allows, grantFamilies, parseSource, runsOn, targetsMatch, updateTargets } from "../shared/userscript.js";
+import { applyScriptChanges, getLocal, getSession, readScripts } from "../shared/storage.js";
+import { allows, parseSource, runsOn, targetsMatch, updateTargets } from "../shared/userscript.js";
 import { validate } from "../shared/validate.js";
-import { decodeImport } from "./backup-file.js";
-import { diffView } from "./diff.js";
 import { createCodeEditor } from "./code-editor.js";
+import { setupDialogs } from "./dialogs.js";
 import { templates } from "./templates.js";
+import { element, makeButton, openReview, review } from "./ui.js";
+import { setupUpdates } from "./updates-ui.js";
 
 const starter = `// ==UserScript==
 // @name        Highlight example heading
@@ -18,78 +18,77 @@ const starter = `// ==UserScript==
 
 document.querySelector("h1")?.style.setProperty("color", "rebeccapurple");`;
 
-const list = document.querySelector("#scripts");
-const form = document.querySelector("main form");
-const cursorPosition = document.querySelector("#cursor-position");
-const saveButton = document.querySelector("#save");
-const isMac = navigator.userAgentData?.platform === "macOS" || navigator.platform.startsWith("Mac");
+const list = $("#scripts");
+const form = $("main form", HTMLFormElement);
+const cursorPosition = $("#cursor-position");
+const saveButton = $("#save", HTMLButtonElement);
+const isMac = /** @type {any} */ (navigator).userAgentData?.platform === "macOS" || navigator.platform.startsWith("Mac");
 const modifierLabel = isMac ? "⌘" : "Ctrl+";
-for (const key of document.querySelectorAll("[data-shortcut]")) key.textContent = modifierLabel + key.dataset.shortcut;
+for (const key of /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll("[data-shortcut]"))) key.textContent = modifierLabel + key.dataset.shortcut;
 saveButton.setAttribute("aria-keyshortcuts", isMac ? "Meta+S" : "Control+S");
 
-const enabled = document.querySelector("#enabled");
-const status = document.querySelector("#status");
-const newButton = document.querySelector("#new");
-const deleteButton = document.querySelector("#delete");
-const historyButton = document.querySelector("#history");
-const valuesButton = document.querySelector("#values");
-const importButton = document.querySelector("#import");
-const importFile = document.querySelector("#import-file");
-const exportButton = document.querySelector("#export");
-const backupButton = document.querySelector("#backup");
-const trashButton = document.querySelector("#trash");
-const backupState = document.querySelector("#backup-state");
-const diagnosticUrl = document.querySelector("#diagnostic-url");
-const diagnosticMessage = document.querySelector("#diagnostic-message");
-const diagnosticResults = document.querySelector("#diagnostic-results");
-const review = document.querySelector("#review");
-const reviewTitle = document.querySelector("#review-title");
-const reviewContent = document.querySelector("#review-content");
-const validation = document.querySelector("#validation");
-const runState = document.querySelector("#run-state");
-const pauseAll = document.querySelector("#pause-all");
-const pausedBanner = document.querySelector("#paused-banner");
-const orderControls = document.querySelector("#order-controls");
-const orderLabel = document.querySelector("#order-label");
-const moveUp = document.querySelector("#move-up");
-const moveDown = document.querySelector("#move-down");
-const setupBanner = document.querySelector("#setup-banner");
-const updatesButton = document.querySelector("#updates");
-const updateState = document.querySelector("#update-state");
+const enabled = $("#enabled", HTMLInputElement);
+const status = $("#status");
+const newButton = $("#new", HTMLButtonElement);
+const deleteButton = $("#delete", HTMLButtonElement);
+const historyButton = $("#history", HTMLButtonElement);
+const valuesButton = $("#values", HTMLButtonElement);
+const trashButton = $("#trash", HTMLButtonElement);
+const updatesButton = $("#updates", HTMLButtonElement);
+const exportButton = $("#export", HTMLButtonElement);
+const backupState = $("#backup-state");
+const diagnosticUrl = $("#diagnostic-url", HTMLInputElement);
+const diagnosticMessage = $("#diagnostic-message");
+const diagnosticResults = $("#diagnostic-results");
+const validation = $("#validation", HTMLButtonElement);
+const runState = $("#run-state");
+const pauseAll = $("#pause-all", HTMLInputElement);
+const pausedBanner = $("#paused-banner");
+const orderControls = $("#order-controls");
+const orderLabel = $("#order-label");
+const moveUp = $("#move-up", HTMLButtonElement);
+const moveDown = $("#move-down", HTMLButtonElement);
+const setupBanner = $("#setup-banner");
 
-const search = document.querySelector("#search");
+const search = $("#search", HTMLInputElement);
 // Status filter chips are radio buttons; this keeps the select-style .value interface the library code reads.
 const filter = {
   get value() {
-    return document.querySelector('input[name="filter"]:checked').value;
+    return $('input[name="filter"]:checked', HTMLInputElement).value;
   },
   set value(next) {
-    document.querySelector(`input[name="filter"][value="${next}"]`).checked = true;
+    $(`input[name="filter"][value="${next}"]`, HTMLInputElement).checked = true;
   }
 };
-const tagFilter = document.querySelector("#tag");
-const sort = document.querySelector("#sort");
-const empty = document.querySelector("#library-empty");
-const title = document.querySelector("#script-title");
-const draftState = document.querySelector("#draft-state");
-const scriptState = document.querySelector("#script-state");
-const targets = document.querySelector("#targets");
-const setup = document.querySelector("#setup");
-const setupName = document.querySelector("#setup-name");
-const setupSites = document.querySelector("#setup-sites");
-const inspect = document.querySelector("#inspect");
-const diagnostics = document.querySelector("#diagnostics");
+const tagFilter = $("#tag", HTMLSelectElement);
+const sort = $("#sort", HTMLSelectElement);
+const empty = $("#library-empty");
+const title = $("#script-title");
+const draftState = $("#draft-state");
+const scriptState = $("#script-state");
+const targets = $("#targets");
+const setup = $("#setup", HTMLDetailsElement);
+const setupName = $("#setup-name", HTMLInputElement);
+const setupSites = $("#setup-sites", HTMLTextAreaElement);
+const inspect = $("#inspect", HTMLButtonElement);
+const diagnostics = $("#diagnostics");
 
+/** @type {import("../shared/types.js").Script[]} */
 let scripts = [];
+/** @type {import("../shared/types.js").TrashedScript[]} */
 let trash = [];
+/** @type {import("../shared/types.js").Settings} */
 let settings = {};
+/** @type {import("../shared/types.js").LocalStore["syncState"]} */
 let syncState;
+/** @type {import("../shared/types.js").SessionStore["runs"]} */
 let runs = {};
 let selectedId;
 // The stored record the editor was loaded from; saves send it so the worker can reject edits made elsewhere.
 let loaded;
 let draftBaseline = starter;
 let busy = false;
+/** @type {import("../shared/types.js").RegistrationState | undefined} */
 let registrationState;
 
 function registrationMessage(id) {
@@ -130,7 +129,7 @@ function renderProblems(found) {
   validation.title = found.length ? "Show all problems" : "";
 }
 
-const source = createCodeEditor(document.querySelector("#editor"), {
+const source = createCodeEditor($("#editor"), {
   onChange: refreshSource,
   onCursor: ({ line, column }) => {
     cursorPosition.textContent = `Ln ${line}, Col ${column}`;
@@ -302,7 +301,7 @@ function renderLibrary() {
     button.addEventListener("click", () => {
       if (!busy && script.id !== selectedId && canLeave()) {
         select(script);
-        list.querySelector('[aria-pressed="true"]')?.focus();
+        /** @type {HTMLElement} */ (list.querySelector('[aria-pressed="true"]'))?.focus();
       }
     });
     row.append(button, toggle);
@@ -394,10 +393,12 @@ function canLeave() {
 async function send(message) {
   const response = await chrome.runtime.sendMessage(message);
   if (!response?.ok) throw new Error(response?.error ?? "The script manager did not respond.");
-  registrationState = response.state;
+  // Most replies are the registration state; a few (diagnostics) carry something else.
+  if (Array.isArray(response.state?.active)) registrationState = response.state;
   return response.state;
 }
 
+/** @returns {any[]} every control that is disabled while an operation runs */
 function controls() {
   return [...form.elements, ...document.querySelectorAll("aside button, aside input[type=checkbox], .app-header button, .app-header input, #resume")];
 }
@@ -405,7 +406,7 @@ function controls() {
 async function perform(operation) {
   if (busy) return;
   busy = true;
-  const affected = controls().map(control => [control, control.disabled]);
+  const affected = controls().map(control => /** @type {[any, boolean]} */ ([control, control.disabled]));
   for (const [control] of affected) control.disabled = true;
   status.textContent = "";
   try {
@@ -420,8 +421,8 @@ async function perform(operation) {
 }
 
 async function reloadData() {
-  const stored = await chrome.storage.local.get(["scripts", "trash", "settings", "syncState"]);
-  scripts = stored.scripts ?? [];
+  const [library, stored] = await Promise.all([readScripts(), getLocal(["trash", "settings", "syncState"])]);
+  scripts = library;
   trash = stored.trash ?? [];
   settings = stored.settings ?? {};
   syncState = stored.syncState;
@@ -464,7 +465,7 @@ for (const control of [tagFilter, sort, ...document.querySelectorAll('input[name
 }
 enabled.addEventListener("change", updateDraftState);
 pauseAll.addEventListener("change", () => sendSettings({ paused: pauseAll.checked }));
-document.querySelector("#resume").addEventListener("click", () => sendSettings({ paused: false }));
+$("#resume", HTMLButtonElement).addEventListener("click", () => sendSettings({ paused: false }));
 window.addEventListener("beforeunload", event => {
   if (!isDirty()) return;
   event.preventDefault();
@@ -473,7 +474,7 @@ window.addEventListener("beforeunload", event => {
 setup.querySelector("summary").addEventListener("click", () => {
   if (!setup.open) populateSetup();
 });
-const applySetup = document.querySelector("#apply-setup");
+const applySetup = $("#apply-setup", HTMLButtonElement);
 setupName.addEventListener("keydown", event => {
   if (event.key !== "Enter" || event.isComposing) return;
   event.preventDefault();
@@ -518,27 +519,6 @@ document.addEventListener("keydown", event => {
     source.openSearch();
   }
 });
-
-function openReview(heading, ...content) {
-  reviewTitle.textContent = heading;
-  reviewContent.replaceChildren(...content);
-  if (!review.open) review.showModal();
-}
-
-function makeButton(label, action) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.textContent = label;
-  button.addEventListener("click", action);
-  return button;
-}
-
-function element(tag, text, className) {
-  const node = document.createElement(tag);
-  if (text !== undefined) node.textContent = text;
-  if (className) node.className = className;
-  return node;
-}
 
 function openTemplates(site) {
   if (!canLeave()) return;
@@ -623,19 +603,22 @@ function move(offset) {
   });
 }
 
-for (const menu of document.querySelectorAll("details.menu")) {
+/** @param {string} selector @returns {NodeListOf<HTMLDetailsElement>} */
+const menus = selector => document.querySelectorAll(selector);
+
+for (const menu of menus("details.menu")) {
   menu.addEventListener("click", event => {
-    if (event.target.closest(".menu-items button")) menu.open = false;
+    if (/** @type {Element} */ (event.target).closest(".menu-items button")) menu.open = false;
   });
 }
 document.addEventListener("click", event => {
-  for (const menu of document.querySelectorAll("details.menu[open]")) {
-    if (!menu.contains(event.target)) menu.open = false;
+  for (const menu of menus("details.menu[open]")) {
+    if (!menu.contains(/** @type {Node} */ (event.target))) menu.open = false;
   }
 });
 document.addEventListener("keydown", event => {
   if (event.key !== "Escape") return;
-  for (const menu of document.querySelectorAll("details.menu[open]")) {
+  for (const menu of menus("details.menu[open]")) {
     menu.open = false;
     menu.querySelector("summary").focus();
   }
@@ -646,409 +629,7 @@ diagnosticUrl.addEventListener("input", () => {
   if (filter.value === "page") renderLibrary();
 });
 
-function downloadBackup(data) {
-  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "tailorscript-backup.json";
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-exportButton.addEventListener("click", () => perform(async () => {
-  const latest = await readScripts();
-  if (!latest.length) throw new Error("There are no scripts to export.");
-  downloadBackup({ version: 1, scripts: latest.map(({ source, history = [] }) => ({ source, history })) });
-  await send({ type: "settings", patch: { lastExportAt: Date.now() } });
-  await reloadData();
-}));
-
-function reviewImport(entries, origin) {
-  const rows = element("ul", undefined, "import-list");
-  const choices = entries.map(entry => {
-    const identical = scripts.find(script => script.source === entry.source);
-    const sameName = scripts.find(script => script.name === entry.name);
-    const item = element("li");
-    const choice = document.createElement("select");
-    choice.append(new Option("Add as a new script", "new"));
-    if (!identical && sameName) choice.append(new Option(`Replace “${sameName.name}” (disables it for review)`, sameName.id));
-    choice.append(new Option("Skip", "skip"));
-    choice.value = identical ? "skip" : "new";
-    choice.setAttribute("aria-label", `Import action for ${entry.name}`);
-    item.append(element("strong", entry.name),
-      element("span", ` — ${[...entry.matches, ...entry.includes].join(", ")}${entry.excludeMatches.length + entry.excludes.length
-        ? `; excludes ${[...entry.excludeMatches, ...entry.excludes].join(", ")}` : ""}`),
-      element("span", identical ? "Identical to a script in your library." : sameName ? "A script with this name already exists." : "", "import-note"),
-      choice);
-    rows.append(item);
-    return choice;
-  });
-  openReview(`Review import from ${origin}`, element("p", "Imported scripts start disabled so you can review them."), rows,
-    makeButton("Import selected", () => {
-      const chosen = entries.flatMap(({ source, history }, index) => {
-        const action = choices[index].value;
-        return action === "skip" ? [] : [{ source, history, ...(action === "new" ? {} : { replace: action }) }];
-      });
-      review.close();
-      if (!chosen.length) return;
-      perform(async () => {
-        await send({ type: "import", entries: chosen });
-        await reloadData();
-        const replacedSelected = chosen.some(entry => entry.replace === selectedId);
-        if (replacedSelected && !isDirty()) select(scripts.find(item => item.id === selectedId));
-        status.textContent = `Imported ${chosen.length} disabled script(s).` +
-          (replacedSelected && isDirty() ? " The open script was replaced; reload it before saving." : "");
-      });
-    }));
-}
-
-importButton.addEventListener("click", () => importFile.click());
-importFile.addEventListener("change", () => {
-  const [file] = importFile.files;
-  importFile.value = "";
-  if (!file) return;
-  perform(async () => {
-    reviewImport(decodeImport(await file.text(), file.name.toLowerCase().endsWith(".json")), file.name);
-  });
-});
-
-function showHistory() {
-  const script = scripts.find(item => item.id === selectedId);
-  if (!script?.history?.length) return;
-  const versions = document.createElement("ol");
-  for (const version of script.history) {
-    const item = document.createElement("li");
-    const details = document.createElement("details");
-    const summary = element("summary", new Date(version.savedAt).toLocaleString());
-    if (version.label) summary.append(" — ", element("strong", version.label));
-    const label = document.createElement("input");
-    label.type = "text";
-    label.value = version.label ?? "";
-    label.placeholder = "Label this version";
-    label.maxLength = 80;
-    label.setAttribute("aria-label", "Version label");
-    const preview = element("pre", version.source, "version-source");
-    const actions = element("div", undefined, "version-actions");
-    actions.append(label, makeButton("Save label", () => {
-      review.close();
-      perform(async () => {
-        await send({ type: "label", id: script.id, savedAt: version.savedAt, label: label.value });
-        await reloadData();
-        loaded = { ...loaded, history: scripts.find(item => item.id === script.id)?.history };
-        showHistory();
-      });
-    }), makeButton("Compare with editor", () => {
-      try {
-        openReview(`Changes since ${new Date(version.savedAt).toLocaleString()}`,
-          element("p", "Lines marked - are only in that version. Lines marked + are only in the editor.", "diff-help"),
-          diffView(version.source, source.value), makeButton("Back to history", showHistory));
-      } catch (error) {
-        status.textContent = error.message;
-      }
-    }), makeButton("Load into editor", () => {
-      if (!canLeave()) return;
-      source.replace(version.source);
-      review.close();
-      source.focus();
-      status.textContent = "Version loaded. Save to restore it.";
-    }));
-    details.append(summary, actions, preview);
-    item.append(details);
-    versions.append(item);
-  }
-  openReview("Version history", versions);
-}
-historyButton.addEventListener("click", showHistory);
-
-async function showValues() {
-  const id = selectedId;
-  const key = `values:${id}`;
-  const { [key]: values = {} } = await chrome.storage.local.get(key);
-  const entries = Object.entries(values);
-  const content = entries.length ? element("dl", undefined, "stored-values") : element("p", "This script hasn’t stored any values yet.");
-  for (const [name, value] of entries) content.append(element("dt", name), element("dd", JSON.stringify(value, null, 2)));
-  openReview("Stored values", element("p", "Values saved with GM.setValue. They stay in this Chrome profile and aren’t included in backups."), content,
-    ...(entries.length ? [makeButton("Clear stored values", () => {
-      if (!confirm("Clear every value this script has stored? This can’t be undone.")) return;
-      review.close();
-      perform(async () => {
-        await send({ type: "clear-values", id });
-        status.textContent = "Stored values cleared.";
-      });
-    })] : []));
-}
-valuesButton.addEventListener("click", showValues);
-
-function showTrash() {
-  const content = trash.length ? element("ul", undefined, "trash-list")
-    : element("p", "The Trash is empty. Deleted scripts stay here for 30 days.");
-  for (const script of trash) {
-    const item = element("li");
-    item.append(element("strong", script.name), element("span", ` deleted ${timeAgo(script.deletedAt)}`, "trash-age"),
-      makeButton("Restore", () => {
-        review.close();
-        if (canLeave()) restore(script.id);
-      }),
-      makeButton("Delete forever", () => {
-        if (!confirm(`Permanently delete “${script.name}” and its history? This can’t be undone.`)) return;
-        perform(async () => {
-          await send({ type: "purge", id: script.id });
-          await reloadData();
-          showTrash();
-        });
-      }));
-    content.append(item);
-  }
-  openReview("Trash", element("p", "Deleted scripts are kept for 30 days, then removed with their history and stored values."), content,
-    ...(trash.length ? [makeButton("Empty Trash", () => {
-      if (!confirm(`Permanently delete ${trash.length} script(s)? This can’t be undone.`)) return;
-      perform(async () => {
-        await send({ type: "purge" });
-        await reloadData();
-        showTrash();
-      });
-    })] : []));
-}
-trashButton.addEventListener("click", showTrash);
-
-async function showSiteAccess() {
-  const { origins = [] } = await chrome.permissions.getAll();
-  const granted = origins.filter(origin => /^https?:|^\*:/.test(origin));
-  const content = granted.length ? element("ul", undefined, "access-list")
-    : element("p", "No sites have been granted yet. Saving an enabled script asks for access.");
-  for (const origin of granted) {
-    const users = scripts.filter(script => {
-      const metadata = metadataFor(script);
-      return metadata?.origins.includes(origin);
-    });
-    const item = element("li");
-    item.append(element("code", origin),
-      element("span", users.length ? ` — used by ${users.map(script => script.name).join(", ")}` : " — not used by any script", "access-users"),
-      makeButton("Remove access", async () => {
-        const running = users.filter(script => script.enabled).length;
-        if (running && !confirm(`${running} enabled script(s) will stop running on ${origin}. Remove access?`)) return;
-        try {
-          if (!await chrome.permissions.remove({ origins: [origin] })) throw new Error("Chrome kept this site access.");
-          await showSiteAccess();
-          status.textContent = `Removed access to ${origin}.`;
-        } catch (error) {
-          status.textContent = error.message;
-        }
-      }));
-    content.append(item);
-  }
-  openReview("Site access", element("p", "Sites this extension may run scripts on. Removing access stops matching scripts until you save them enabled again."), content);
-}
-document.querySelector("#site-access").addEventListener("click", () => showSiteAccess().catch(error => {
-  status.textContent = error.message;
-}));
-
-function settingSwitch(key, title, help) {
-  const toggle = document.createElement("input");
-  toggle.type = "checkbox";
-  toggle.className = "switch";
-  toggle.setAttribute("role", "switch");
-  toggle.checked = Boolean(settings[key]);
-  toggle.addEventListener("change", () => {
-    review.close();
-    sendSettings({ [key]: toggle.checked }).then(showBackup);
-  });
-  const label = element("label", undefined, "switch-label");
-  const text = element("span", title);
-  text.append(element("small", help));
-  label.append(toggle, text);
-  return label;
-}
-
-function oneClickSwitch(granted) {
-  const toggle = document.createElement("input");
-  toggle.type = "checkbox";
-  toggle.className = "switch";
-  toggle.setAttribute("role", "switch");
-  toggle.checked = granted;
-  toggle.addEventListener("change", async () => {
-    try {
-      const changed = toggle.checked
-        ? await chrome.permissions.request({ origins: installOrigins })
-        : await chrome.permissions.remove({ origins: installOrigins });
-      if (!changed) toggle.checked = !toggle.checked;
-    } catch (error) {
-      toggle.checked = !toggle.checked;
-      status.textContent = error.message;
-    }
-  });
-  const label = element("label", undefined, "switch-label");
-  const text = element("span", "One-click installs");
-  text.append(element("small", "Opening a .user.js link on Greasy Fork, OpenUserJS or GitHub shows Tailorscript’s install page. Needs access to those sites."));
-  label.append(toggle, text);
-  return label;
-}
-
-async function showBackup() {
-  const [oneClick, commands] = await Promise.all([
-    chrome.permissions.contains({ origins: installOrigins }),
-    chrome.commands?.getAll() ?? []
-  ]);
-  const shortcut = commands.find(command => command.name === "toggle-pause")?.shortcut;
-  const syncHelp = settings.syncBackup
-    ? syncState?.error ? `Last attempt failed: ${syncState.error}` : syncState?.at ? `Last synced ${timeAgo(syncState.at)}.` : "Waiting for the next change."
-    : "Stores script sources only (about 100 KB), not history, site access, or enabled settings.";
-  const list = element("div", undefined, "settings-list");
-  list.append(
-    settingSwitch("reloadAfterSave", "Reload matching tabs after saving", "Open tabs that a saved script runs on reload so the change applies right away."),
-    settingSwitch("syncBackup", "Back up to Chrome sync", syncHelp),
-    oneClickSwitch(oneClick));
-  const keys = element("p", shortcut ? `Press ${shortcut} anywhere in Chrome to pause or resume all scripts. ` : "Set a keyboard shortcut to pause or resume all scripts. ");
-  keys.append(makeButton("Change shortcut", () => chrome.tabs.create({ url: "chrome://extensions/shortcuts" })));
-  openReview("Settings & backup", list, keys,
-    element("p", settings.lastExportAt ? `Last exported ${new Date(settings.lastExportAt).toLocaleString()}.` : "You haven’t exported a backup file yet."),
-    makeButton("Restore from Chrome sync", () => perform(async () => {
-      const { text, savedAt } = await readSyncBackup();
-      reviewImport(decodeImport(text, true), `Chrome sync (${new Date(savedAt).toLocaleString()})`);
-    })));
-}
-backupButton.addEventListener("click", showBackup);
-
-
-function renderUpdateState(script) {
-  updateState.replaceChildren();
-  updateState.dataset.state = "";
-  if (script?.pendingUpdate) {
-    updateState.dataset.state = "available";
-    updateState.append(`Version ${script.pendingUpdate.version} is available${script.pendingUpdate.reasons.length ? " and needs your review" : ""}.`,
-      makeButton("Review update", () => reviewUpdate(script)));
-  } else if (script?.updateCheck?.error) {
-    updateState.dataset.state = "warning";
-    updateState.append(`Update check failed ${timeAgo(script.updateCheck.at)}: ${script.updateCheck.error}`);
-  }
-}
-
-function bulletList(items) {
-  const node = element("ul", undefined, "plain-list");
-  node.append(...items.map(({ text, warning }) => element("li", text, warning ? "warning-item" : "")));
-  return node;
-}
-
-function reviewUpdate(script) {
-  const update = script.pendingUpdate;
-  let next;
-  try {
-    next = parseSource(update.source);
-  } catch (error) {
-    status.textContent = error.message;
-    return;
-  }
-  const apply = makeButton("Apply update", () => {
-    review.close();
-    perform(async () => {
-      if (script.enabled && !await chrome.permissions.request({ origins: next.origins })) {
-        throw new Error("Site access was declined, so the update wasn’t applied.");
-      }
-      await send({ type: "apply-update", id: script.id });
-      await reloadData();
-      const updated = scripts.find(item => item.id === script.id);
-      if (script.id === selectedId && !isDirty()) select(updated);
-      status.textContent = `Updated “${updated.name}” to v${update.version}. Reload matching pages to run it.`;
-    });
-  });
-  apply.className = "primary";
-  const actions = element("div", undefined, "dialog-actions");
-  actions.append(apply, makeButton("Skip this version", () => {
-    review.close();
-    perform(async () => {
-      await send({ type: "dismiss-update", id: script.id });
-      await reloadData();
-      status.textContent = `Skipped v${update.version}. Tailorscript will offer the next version.`;
-    });
-  }));
-  openReview(`Update “${script.name}” to v${update.version}`,
-    ...(update.reasons.length ? [element("p", "This update wasn’t applied automatically because:"), bulletList(update.reasons.map(text => ({ text })))] : []),
-    element("p", "After updating, it can:"), bulletList(describeGrants(next, grantFamilies)),
-    actions, element("p", "Changes:"), diffView(script.source, update.source));
-}
-
-function showUpdates() {
-  const script = scripts.find(item => item.id === selectedId);
-  if (!script) return;
-  const metadata = metadataFor(script);
-  const details = element("dl", undefined, "facts");
-  const fact = (label, value) => details.append(element("dt", label), element("dd", value));
-  fact("Installed from", script.installUrl ?? metadata?.updateUrl ?? "—");
-  fact("Version", metadata?.version ? `v${metadata.version}` : "Not declared");
-  fact("Last checked", script.updateCheck?.at ? timeAgo(script.updateCheck.at) : "Never");
-  if (script.updateCheck?.error) fact("Last error", script.updateCheck.error);
-  const toggle = document.createElement("input");
-  toggle.type = "checkbox";
-  toggle.className = "switch";
-  toggle.setAttribute("role", "switch");
-  toggle.checked = script.autoUpdate !== false;
-  toggle.addEventListener("change", () => perform(async () => {
-    await send({ type: "auto-update", id: script.id, enabled: toggle.checked });
-    await reloadData();
-  }));
-  const label = element("label", undefined, "switch-label");
-  const text = element("span", "Update automatically");
-  text.append(element("small", "Updates that need new access or APIs, or would replace your edits, always wait for your review."));
-  label.append(toggle, text);
-  const settingsList = element("div", undefined, "settings-list");
-  settingsList.append(label);
-  const actions = element("div", undefined, "dialog-actions");
-  actions.append(makeButton("Check now", () => {
-    review.close();
-    checkForUpdates(script.id);
-  }));
-  if (script.pendingUpdate) actions.prepend(makeButton(`Review v${script.pendingUpdate.version}`, () => reviewUpdate(script)));
-  openReview("Updates", details, settingsList, actions);
-}
-updatesButton.addEventListener("click", showUpdates);
-
-function checkForUpdates(id) {
-  return perform(async () => {
-    status.textContent = "Checking for updates…";
-    const { updateSummary: summary } = await send({ type: "check-updates", id });
-    await reloadData();
-    const fresh = scripts.find(item => item.id === selectedId);
-    if (fresh && !isDirty() && fresh.source !== loaded?.source) select(fresh);
-    const parts = [
-      summary.updated.length && `updated ${summary.updated.join(", ")}`,
-      summary.waiting.length && `${summary.waiting.length} waiting for review`,
-      summary.failed.length && `${summary.failed.length} couldn’t be checked`
-    ].filter(Boolean);
-    status.textContent = !summary.checked ? "None of your scripts have an update address."
-      : parts.length ? `Checked ${summary.checked} script${summary.checked === 1 ? "" : "s"}: ${parts.join(", ")}.`
-      : `Checked ${summary.checked} script${summary.checked === 1 ? "" : "s"}. Everything is up to date.`;
-  });
-}
-document.querySelector("#check-updates").addEventListener("click", () => checkForUpdates());
-
-document.querySelector("#install-url").addEventListener("click", () => {
-  const field = document.createElement("input");
-  field.type = "url";
-  field.placeholder = "https://greasyfork.org/…/script.user.js";
-  field.setAttribute("aria-label", "Script address");
-  const go = makeButton("Review script", () => {
-    try {
-      const url = new URL(field.value.trim());
-      if (!["http:", "https:"].includes(url.protocol)) throw new Error();
-      review.close();
-      chrome.tabs.create({ url: installPageUrl(url.href) });
-    } catch {
-      field.setCustomValidity("Enter an http or https address.");
-      field.reportValidity();
-    }
-  });
-  go.className = "primary";
-  field.addEventListener("input", () => field.setCustomValidity(""));
-  field.addEventListener("keydown", event => {
-    if (event.key === "Enter" && !event.isComposing) go.click();
-  });
-  const row = element("div", undefined, "url-row");
-  row.append(field, go);
-  openReview("Install from URL", element("p", "Paste the address of a .user.js file. You’ll see what it does before anything is installed."), row);
-  field.focus();
-});
-
-document.querySelector("#open-extension-settings").addEventListener("click", () => {
+$("#open-extension-settings", HTMLButtonElement).addEventListener("click", () => {
   chrome.tabs.create({ url: `chrome://extensions/?id=${chrome.runtime.id}` });
 });
 // Allow User Scripts has no change event, so check again whenever the user comes back to this tab.
@@ -1071,13 +652,30 @@ function focusRequested(id, message) {
   source.focus();
 }
 
-chrome.storage.onChanged.addListener((changes, area) => {
+// What the dialog modules may read and do. Getters keep them reading the current state rather than a copy.
+const app = {
+  get scripts() { return scripts; },
+  get trash() { return trash; },
+  get settings() { return settings; },
+  get syncState() { return syncState; },
+  get selectedId() { return selectedId; },
+  get loaded() { return loaded; },
+  set loaded(value) { loaded = value; },
+  source, status,
+  perform, send, reloadData, sendSettings, select, isDirty, canLeave, restore, metadataFor
+};
+setupDialogs(app);
+const { renderUpdateState } = setupUpdates(app);
+
+// Stored values arrive untyped; their shapes are the ones in shared/types.js.
+chrome.storage.onChanged.addListener((/** @type {Record<string, { newValue?: any, oldValue?: any }>} */ changes, area) => {
   if (area === "local") {
     if (changes.trash) trash = changes.trash.newValue ?? [];
     if (changes.settings) settings = changes.settings.newValue ?? {};
     if (changes.syncState) syncState = changes.syncState.newValue;
-    if (changes.scripts) {
-      scripts = changes.scripts.newValue ?? [];
+    const changed = applyScriptChanges(scripts, changes);
+    if (changed) {
+      scripts = changed;
       // Operations in this tab select their own result; only follow changes made elsewhere, such as the popup.
       if (!busy) {
         const fresh = scripts.find(item => item.id === selectedId);
@@ -1115,7 +713,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 await perform(async () => {
   await reloadData();
-  const context = await chrome.storage.session.get(["diagnosticUrl", "runs", "focusScript", "focusMessage", "newScriptSite"]);
+  const context = await getSession(["diagnosticUrl", "runs", "focusScript", "focusMessage", "newScriptSite"]);
   runs = context.runs ?? {};
   diagnosticUrl.value = context.diagnosticUrl ?? "";
   if (diagnosticUrl.value) showDiagnostics(true);

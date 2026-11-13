@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { before, test } from "node:test";
-import { installChrome, userscript } from "./helpers/chrome.mjs";
+import { installChrome, userscript, storedScripts } from "./helpers/chrome.mjs";
 
 const managerUrl = "chrome-extension://test/manager/index.html";
 const popupUrl = "chrome-extension://test/popup/popup.html";
@@ -16,11 +16,16 @@ before(async () => {
 const call = (message, url = managerUrl) => new Promise(resolve => {
   assert.equal(listeners.message(message, { url }, resolve), true);
 });
-const fromScript = (message, sender) => new Promise(resolve => {
-  if (!listeners.userScriptMessage(message, sender, resolve)) setTimeout(resolve, 20);
-});
+// Sends a message as the script named by sender.script, signed the way its injected runtime would sign it.
+const fromScript = async (message, { script, ...sender }) => {
+  const { tokenFor } = await import("../src/background/bridge-token.js");
+  const signed = { id: script, token: await tokenFor(script), ...message };
+  return new Promise(resolve => {
+    if (!listeners.userScriptMessage(signed, sender, resolve)) setTimeout(resolve, 20);
+  });
+};
 const settle = () => new Promise(resolve => setTimeout(resolve, 30));
-const find = id => local.scripts.find(script => script.id === id);
+const find = id => storedScripts().find(script => script.id === id);
 
 test("saves scripts, keeps history and rejects stale edits", async () => {
   const saved = await call({ type: "save", id: "s1", script: { source: userscript("1;"), enabled: true } });
@@ -51,21 +56,21 @@ test("settings accept known keys only and pausing unregisters", async () => {
 test("moves scripts to change run order", async () => {
   await call({ type: "save", id: "s2", script: { source: userscript("x;", "// @grant GM.getValue\n// @grant GM.setValue\n// @grant GM.listValues\n"), enabled: true } });
   await call({ type: "move", id: "s2", offset: -1 });
-  assert.deepEqual(local.scripts.map(({ id }) => id), ["s2", "s1"]);
+  assert.deepEqual(storedScripts().map(({ id }) => id), ["s2", "s1"]);
 });
 
 test("serves GM values only for granted operations", async () => {
-  const sender = { userScriptWorldId: "s2" };
+  const sender = { script: "s2" };
   assert.deepEqual(await fromScript({ type: "value", op: "set", key: "k", value: { a: 1 } }, sender), { value: undefined });
   assert.deepEqual((await fromScript({ type: "value", op: "get", key: "k" }, sender)).value, { a: 1 });
   assert.deepEqual((await fromScript({ type: "value", op: "list" }, sender)).value, ["k"]);
   assert.match((await fromScript({ type: "value", op: "delete", key: "k" }, sender)).error, /GM.deleteValue/);
-  assert.match((await fromScript({ type: "value", op: "get", key: "k" }, { userScriptWorldId: "s1" })).error, /@grant/);
+  assert.match((await fromScript({ type: "value", op: "get", key: "k" }, { script: "s1" })).error, /@grant/);
   assert.match((await fromScript({ type: "value", op: "set", key: "big", value: "x".repeat(1_100_000) }, sender)).error, /1 MB/);
 });
 
 test("records runs and errors per tab and resets on a new document", async () => {
-  const sender = (id, documentId) => ({ userScriptWorldId: id, url: "https://a.com/", tab: { id: 7 }, frameId: 0, documentId });
+  const sender = (id, documentId) => ({ script: id, url: "https://a.com/", tab: { id: 7 }, frameId: 0, documentId });
   await fromScript({ type: "run" }, sender("s1", "d1"));
   await fromScript({ type: "error", message: "boom", line: 3, column: 1 }, sender("s1", "d1"));
   await settle();
@@ -100,7 +105,7 @@ test("labels versions and imports copies or disabled replacements", async () => 
   await call({ type: "label", id: "s1", savedAt, label: "  works " });
   assert.equal(find("s1").history[0].label, "works");
   await call({ type: "import", entries: [{ source: userscript("new;"), history: [] }, { source: userscript("replaced;"), history: [], replace: "s1" }] });
-  assert.equal(local.scripts.length, 2);
+  assert.equal(storedScripts().length, 2);
   assert.equal(find("s1").enabled, false);
   assert.ok(find("s1").source.includes("replaced;"));
   assert.equal(find("s1").history.length, 2);
@@ -110,4 +115,33 @@ test("backs up to Chrome sync when enabled", async () => {
   await call({ type: "settings", patch: { syncBackup: true } });
   assert.ok(local.syncState.at && !local.syncState.error);
   assert.equal(chrome.storage.sync.data.syncBackup.count, 2);
+});
+
+test("rejects malformed page messages and reports diagnostics", async () => {
+  const bad = await call({ type: "toggle", id: "s1", enabled: "yes" });
+  assert.match(bad.error, /enabled should be a boolean/);
+  assert.equal(listeners.message({ type: "constructor" }, { url: managerUrl }, () => {}), false);
+  const { state } = await call({ type: "diagnostics" });
+  assert.equal(state.version, "9.9.9");
+  assert.equal(state.schemaVersion, 2);
+  assert.equal(state.scripts.total, storedScripts().length);
+  assert.equal(JSON.stringify(state).includes("run();"), false, "diagnostics never include sources");
+});
+
+test("rejects malformed userscript requests", async () => {
+  const reply = await fromScript({ type: "xhr", requestId: "r1", request: {} }, { script: "s2", url: "https://a.com/" });
+  assert.match(reply.error, /request\.url is missing/);
+});
+
+test("a script can't act as another script or skip the token", async () => {
+  const { tokenFor } = await import("../src/background/bridge-token.js");
+  const send = message => new Promise(resolve => {
+    assert.equal(listeners.userScriptMessage(message, { url: "https://a.com/" }, resolve), true);
+  });
+  const stolen = await send({ type: "value", op: "list", id: "s2", token: await tokenFor("s1") });
+  assert.match(stolen.error, /didn’t come from a Tailorscript script/);
+  assert.match((await send({ type: "value", op: "list", id: "s2" })).error, /didn’t come from/);
+  const genuine = await send({ type: "value", op: "list", id: "s2", token: await tokenFor("s2") });
+  assert.doesNotMatch(genuine.error ?? "", /didn’t come from/);
+  assert.equal(typeof chrome.storage.local.data.bridgeSecret, "string");
 });

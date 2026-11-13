@@ -28,6 +28,7 @@ export function installChrome() {
   const listeners = {};
   const event = name => ({ addListener: listener => { listeners[name] = listener; } });
   const registered = [];
+  const worlds = new Map();
   const calls = [];
   let nextTab = 100;
   globalThis.chrome = {
@@ -41,7 +42,7 @@ export function installChrome() {
       onMessage: event("message"),
       onUserScriptMessage: event("userScriptMessage")
     },
-    permissions: { contains: async () => true, onAdded: event("permissionsAdded"), onRemoved: event("permissionsRemoved") },
+    permissions: { contains: async () => true, getAll: async () => ({ origins: ["https://a.com/*"] }), onAdded: event("permissionsAdded"), onRemoved: event("permissionsRemoved") },
     tabs: {
       onRemoved: event("tabRemoved"),
       onUpdated: event("tabUpdated"),
@@ -66,7 +67,15 @@ export function installChrome() {
     commands: { onCommand: event("command") },
     declarativeNetRequest: { updateDynamicRules: async rules => { calls.push(["dnr", rules]); } },
     userScripts: {
-      configureWorld: async config => { calls.push(["configureWorld", config]); },
+      configureWorld: async config => {
+        calls.push(["configureWorld", config]);
+        worlds.set(config.worldId ?? "", config);
+      },
+      getWorldConfigurations: async () => [...worlds.values()],
+      resetWorldConfiguration: async worldId => {
+        calls.push(["resetWorld", worldId]);
+        worlds.delete(worldId);
+      },
       getScripts: async () => structuredClone(registered),
       register: async ([registration]) => {
         calls.push(["register", registration.id]);
@@ -83,7 +92,7 @@ export function installChrome() {
       }
     }
   };
-  return { listeners, registered, calls };
+  return { listeners, registered, calls, worlds };
 }
 
 export function userscript(body = "run();", extra = "") {
@@ -105,4 +114,9 @@ export function installFetch(routes = {}) {
     return response;
   };
   return { routes, requests };
+}
+
+// The library as stored: scriptOrder plus one script:<id> key per script.
+export function storedScripts(data = chrome.storage.local.data) {
+  return (data.scriptOrder ?? []).map(id => data[`script:${id}`]);
 }

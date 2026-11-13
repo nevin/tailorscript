@@ -122,6 +122,9 @@ export function connectOrigins(connects) {
   });
 }
 
+/** @typedef {ReturnType<typeof parseSource>} Metadata */
+
+/** @param {string} source */
 export function parseSource(source) {
   const header = source.match(/^\s*\/\/\s*==UserScript==[^\n]*\n([\s\S]*?)^\s*\/\/\s*==\/UserScript==[^\n]*/m);
   const metadata = new Map();

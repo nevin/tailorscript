@@ -1,0 +1,17 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # CodeMirror packages are bundled together, so update them together and rerun npm run vendor.
+      codemirror:
+        patterns: ["@codemirror/*", "@lezer/*", "codemirror"]
+      tooling:
+        patterns: ["*"]
+        exclude-patterns: ["@codemirror/*", "@lezer/*", "codemirror"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
