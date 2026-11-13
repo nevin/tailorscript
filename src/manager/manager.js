@@ -29,7 +29,6 @@ for (const key of document.querySelectorAll("[data-shortcut]")) key.textContent 
 saveButton.setAttribute("aria-keyshortcuts", isMac ? "Meta+S" : "Control+S");
 
 const enabled = document.querySelector("#enabled");
-const reloadAfterSave = document.querySelector("#reload-after-save");
 const status = document.querySelector("#status");
 const newButton = document.querySelector("#new");
 const deleteButton = document.querySelector("#delete");
@@ -58,12 +57,21 @@ const moveUp = document.querySelector("#move-up");
 const moveDown = document.querySelector("#move-down");
 
 const search = document.querySelector("#search");
-const filter = document.querySelector("#filter");
+// Status filter chips are radio buttons; this keeps the select-style .value interface the library code reads.
+const filter = {
+  get value() {
+    return document.querySelector('input[name="filter"]:checked').value;
+  },
+  set value(next) {
+    document.querySelector(`input[name="filter"][value="${next}"]`).checked = true;
+  }
+};
 const tagFilter = document.querySelector("#tag");
 const sort = document.querySelector("#sort");
 const empty = document.querySelector("#library-empty");
 const title = document.querySelector("#script-title");
 const draftState = document.querySelector("#draft-state");
+const scriptState = document.querySelector("#script-state");
 const targets = document.querySelector("#targets");
 const setup = document.querySelector("#setup");
 const setupName = document.querySelector("#setup-name");
@@ -216,11 +224,16 @@ function renderEditorDetails() {
     moveUp.disabled = index <= 0;
     moveDown.disabled = index === scripts.length - 1;
   }
+  const status = script ? scriptStatus(script) : { pill: "New", state: "" };
+  scriptState.textContent = status.pill;
+  scriptState.dataset.state = status.state;
   runState.replaceChildren();
   const summary = script && runSummary(script.id);
   if (!summary) return;
   runState.dataset.state = summary.state;
-  runState.append(summary.text + (runs[script.id].url ? ` · ${runs[script.id].url}` : ""));
+  const { url, error } = runs[script.id];
+  runState.append(error ? `Last run failed${error.line ? ` on line ${error.line}` : ""}: ${error.message} · ${timeAgo(error.at)}` : summary.text,
+    ...(url && summary.state !== "error" ? [` on ${url.replace(/^https?:\/\//, "")}`] : []));
   const line = runs[script.id].error?.line;
   if (line) runState.append(" ", makeButton(`Go to line ${line}`, () => goToLine(line)));
 }
@@ -259,13 +272,16 @@ function renderDiagnostics() {
   }
 }
 
-function libraryState(script) {
-  if (!script.enabled) return ["Disabled", "off"];
-  if (settings.paused) return ["Paused", "off"];
-  if (!registrationState?.active.includes(script.id)) return ["Needs attention", "warning"];
+// One status per script: a short pill label, a longer detail for the library, and the state used for colour and filters.
+function scriptStatus(script) {
+  if (!script.enabled) return { pill: "Off", detail: "Off", state: "off" };
+  if (settings.paused) return { pill: "Paused", detail: "Paused", state: "off" };
+  if (!registrationState?.active.includes(script.id)) {
+    return { pill: "Needs attention", detail: registrationState?.issues[script.id] ? "Needs site access" : "Not registered", state: "warning" };
+  }
   const summary = runSummary(script.id);
-  if (summary?.state === "error") return ["Error on last run", "error"];
-  return [summary ? summary.text : "Registered", "ready"];
+  if (summary?.state === "error") return { pill: "Error", detail: "Error on last run", state: "error" };
+  return { pill: "Active", detail: summary ? summary.text : "Active · hasn’t run yet", state: "ready" };
 }
 
 function checkedPage() {
@@ -291,7 +307,7 @@ function renderLibrary() {
   const entries = scripts.map((script, index) => ({ script, index, metadata: metadataFor(script) }));
   renderTags(entries);
   const visible = entries.filter(({ script, metadata }) => {
-    const [, state] = libraryState(script);
+    const { state } = scriptStatus(script);
     if (filter.value === "enabled" && !script.enabled) return false;
     if (filter.value === "disabled" && script.enabled) return false;
     if (filter.value === "attention" && !["warning", "error"].includes(state)) return false;
@@ -312,24 +328,21 @@ function renderLibrary() {
     row.className = "script-row";
     const toggle = document.createElement("input");
     toggle.type = "checkbox";
+    toggle.className = "switch";
+    toggle.setAttribute("role", "switch");
     toggle.checked = script.enabled;
     toggle.disabled = busy;
     toggle.setAttribute("aria-label", `Enable ${script.name}`);
     toggle.addEventListener("change", () => setEnabled(script, toggle.checked));
     const button = document.createElement("button");
-    const name = document.createElement("span");
-    const state = document.createElement("span");
     button.type = "button";
-    name.textContent = script.name;
-    state.className = "script-state";
-    [state.textContent, state.dataset.state] = libraryState(script);
-    button.append(name, state);
-    if (metadata?.tags.length) {
-      const tags = document.createElement("span");
-      tags.className = "script-tags";
-      tags.textContent = metadata.tags.map(tag => `#${tag}`).join(" ");
-      button.append(tags);
-    }
+    const status = scriptStatus(script);
+    const state = element("span", status.detail, "script-state");
+    state.dataset.state = status.state;
+    const meta = element("span", undefined, "script-meta");
+    meta.append(state);
+    if (metadata?.tags.length) meta.append(element("span", metadata.tags.map(tag => `#${tag}`).join(" "), "script-tags"));
+    button.append(element("span", script.name, "script-name"), meta);
     button.title = registrationState?.issues[script.id] ?? runs[script.id]?.error?.message ?? "";
     button.setAttribute("aria-pressed", String(script.id === selectedId));
     button.addEventListener("click", () => {
@@ -338,7 +351,7 @@ function renderLibrary() {
         list.querySelector('[aria-pressed="true"]')?.focus();
       }
     });
-    row.append(toggle, button);
+    row.append(button, toggle);
     return row;
   }));
 }
@@ -360,14 +373,16 @@ function renderBackupState() {
     : settings.lastExportAt ? `Last exported ${timeAgo(settings.lastExportAt)}.` : "Never exported.";
   if ((changedSince && stale) || syncState?.error) {
     backupState.dataset.state = "warning";
-    if (!syncState?.error) backupState.textContent += " Export a backup to protect recent changes.";
+    if (!syncState?.error) {
+      backupState.textContent += " Recent changes aren’t backed up.";
+      backupState.append(document.createElement("br"), makeButton("Export now", () => exportButton.click()));
+    }
   }
 }
 
 function renderSettings() {
   pauseAll.checked = Boolean(settings.paused);
   pausedBanner.hidden = !settings.paused;
-  reloadAfterSave.checked = Boolean(settings.reloadAfterSave);
 }
 
 function render() {
@@ -391,10 +406,12 @@ function populateSetup() {
 
 function updateTargetsSummary() {
   try {
-    const { matches, allFrames } = parseSource(source.value);
-    targets.textContent = `Matches ${matches.join(", ")}${allFrames ? " · runs in frames too" : ""}`;
+    const { matches, excludeMatches, allFrames } = parseSource(source.value);
+    targets.replaceChildren("Runs on", ...matches.map(pattern => element("code", pattern)));
+    if (excludeMatches.length) targets.append("except", ...excludeMatches.map(pattern => element("code", pattern, "excluded")));
+    if (allFrames) targets.append("including frames");
   } catch {
-    targets.textContent = "Add site rules under Set name and sites.";
+    targets.textContent = "Add the sites this script runs on under Name and sites.";
   }
 }
 
@@ -404,7 +421,9 @@ function isDirty() {
 }
 
 function updateDraftState() {
-  draftState.textContent = isDirty() ? "Unsaved changes" : "";
+  const dirty = isDirty();
+  draftState.textContent = dirty ? "Unsaved" : "";
+  saveButton.dataset.dirty = String(dirty);
 }
 
 function canLeave() {
@@ -479,11 +498,12 @@ function sendSettings(patch) {
 }
 
 search.addEventListener("input", renderLibrary);
-for (const control of [filter, tagFilter, sort]) control.addEventListener("change", renderLibrary);
+for (const control of [tagFilter, sort, ...document.querySelectorAll('input[name="filter"]')]) {
+  control.addEventListener("change", renderLibrary);
+}
 enabled.addEventListener("change", updateDraftState);
 pauseAll.addEventListener("change", () => sendSettings({ paused: pauseAll.checked }));
 document.querySelector("#resume").addEventListener("click", () => sendSettings({ paused: false }));
-reloadAfterSave.addEventListener("change", () => sendSettings({ reloadAfterSave: reloadAfterSave.checked }));
 window.addEventListener("beforeunload", event => {
   if (!isDirty()) return;
   event.preventDefault();
@@ -668,13 +688,15 @@ function element(tag, text, className) {
   return node;
 }
 
-newButton.addEventListener("click", () => {
+function openTemplates(site) {
   if (!canLeave()) return;
+  const host = site && new URL(site.replace("*", "")).host;
   const choices = element("div", undefined, "template-list");
   for (const template of templates) {
     const button = makeButton("", () => {
       review.close();
-      select(undefined, false, template.source);
+      const name = template.source ? parseSource(template.source).name : `${host} tweaks`;
+      select(undefined, false, site ? updateTargets(template.source, name, [site]) : template.source);
       setup.open = true;
       populateSetup();
       setupName.focus();
@@ -683,8 +705,9 @@ newButton.addEventListener("click", () => {
     button.append(element("strong", template.name), element("span", template.description));
     choices.append(button);
   }
-  openReview("Start a new script", choices);
-});
+  openReview(host ? `New script for ${host}` : "Start a new script", choices);
+}
+newButton.addEventListener("click", () => openTemplates());
 
 form.addEventListener("submit", event => {
   event.preventDefault();
@@ -747,6 +770,24 @@ function move(offset) {
     status.textContent = "Run order updated. Reload matching pages to apply it.";
   });
 }
+
+for (const menu of document.querySelectorAll("details.menu")) {
+  menu.addEventListener("click", event => {
+    if (event.target.closest(".menu-items button")) menu.open = false;
+  });
+}
+document.addEventListener("click", event => {
+  for (const menu of document.querySelectorAll("details.menu[open]")) {
+    if (!menu.contains(event.target)) menu.open = false;
+  }
+});
+document.addEventListener("keydown", event => {
+  if (event.key !== "Escape") return;
+  for (const menu of document.querySelectorAll("details.menu[open]")) {
+    menu.open = false;
+    menu.querySelector("summary").focus();
+  }
+});
 
 diagnosticUrl.addEventListener("input", () => {
   renderDiagnostics();
@@ -975,29 +1016,44 @@ document.querySelector("#site-access").addEventListener("click", () => showSiteA
   status.textContent = error.message;
 }));
 
-function showBackup() {
+function settingSwitch(key, title, help) {
   const toggle = document.createElement("input");
   toggle.type = "checkbox";
-  toggle.checked = Boolean(settings.syncBackup);
+  toggle.className = "switch";
+  toggle.setAttribute("role", "switch");
+  toggle.checked = Boolean(settings[key]);
   toggle.addEventListener("change", () => {
     review.close();
-    sendSettings({ syncBackup: toggle.checked }).then(() => showBackup());
+    sendSettings({ [key]: toggle.checked }).then(() => showBackup());
   });
-  const label = element("label", undefined, "toggle");
-  label.append(toggle, " Back up script sources to Chrome sync after every change");
-  const state = settings.syncBackup
+  const label = element("label", undefined, "switch-label");
+  const text = element("span", title);
+  text.append(element("small", help));
+  label.append(toggle, text);
+  return label;
+}
+
+function showBackup() {
+  const syncHelp = settings.syncBackup
     ? syncState?.error ? `Last attempt failed: ${syncState.error}` : syncState?.at ? `Last synced ${timeAgo(syncState.at)}.` : "Waiting for the next change."
-    : "Chrome sync backup is off.";
-  openReview("Backup settings",
-    element("p", settings.lastExportAt ? `Last exported ${new Date(settings.lastExportAt).toLocaleString()}.` : "You haven’t exported a backup yet."),
-    label,
-    element("p", `${state} Sync holds up to about 100 KB and stores sources only, not history, site access, or enabled settings.`, "backup-help"),
+    : "Stores script sources only (about 100 KB), not history, site access, or enabled settings.";
+  const list = element("div", undefined, "settings-list");
+  list.append(
+    settingSwitch("reloadAfterSave", "Reload matching tabs after saving", "Open tabs that a saved script runs on reload so the change applies right away."),
+    settingSwitch("syncBackup", "Back up to Chrome sync", syncHelp));
+  openReview("Settings & backup", list,
+    element("p", settings.lastExportAt ? `Last exported ${new Date(settings.lastExportAt).toLocaleString()}.` : "You haven’t exported a backup file yet."),
     makeButton("Restore from Chrome sync", () => perform(async () => {
       const { text, savedAt } = await readSyncBackup();
       reviewImport(decodeImport(text, true), `Chrome sync (${new Date(savedAt).toLocaleString()})`);
     })));
 }
 backupButton.addEventListener("click", showBackup);
+
+function newScriptRequested(site) {
+  chrome.storage.session.remove("newScriptSite");
+  openTemplates(site);
+}
 
 function focusRequested(id, message) {
   chrome.storage.session.remove(["focusScript", "focusMessage"]);
@@ -1041,6 +1097,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (changes.showDiagnostics?.newValue) showDiagnostics(true);
   if (changes.runs) runs = changes.runs.newValue ?? {};
   if (changes.focusScript?.newValue) focusRequested(changes.focusScript.newValue, changes.focusMessage?.newValue);
+  if (changes.newScriptSite?.newValue) newScriptRequested(changes.newScriptSite.newValue);
   if (changes.registrationState) {
     // Only replace a registration message, so results such as "Saved." stay visible.
     const previous = selectedId && registrationMessage(selectedId);
@@ -1052,7 +1109,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 await perform(async () => {
   await reloadData();
-  const context = await chrome.storage.session.get(["diagnosticUrl", "runs", "focusScript", "focusMessage"]);
+  const context = await chrome.storage.session.get(["diagnosticUrl", "runs", "focusScript", "focusMessage", "newScriptSite"]);
   runs = context.runs ?? {};
   diagnosticUrl.value = context.diagnosticUrl ?? "";
   if (diagnosticUrl.value) showDiagnostics(true);
@@ -1060,4 +1117,5 @@ await perform(async () => {
   await send({ type: "sync" });
   if (selectedId) status.textContent = context.focusMessage || registrationMessage(selectedId);
   if (context.focusScript) chrome.storage.session.remove(["focusScript", "focusMessage"]);
+  if (context.newScriptSite) setTimeout(() => newScriptRequested(context.newScriptSite));
 });

@@ -9,19 +9,27 @@
 </head>
 <body>
   <header>
-    <div>
-      <h1><img src="../icons/logo.svg" alt="" width="20" height="20">Tailorscript</h1>
-      <p id="page"></p>
-    </div>
-    <label class="toggle"><input type="checkbox" id="paused"> Pause all</label>
+    <h1><img src="../icons/logo.svg" alt="" width="22" height="22">Tailorscript</h1>
+    <label class="switch-label"><input type="checkbox" role="switch" class="switch" id="paused"> Pause all</label>
   </header>
+  <section class="site" aria-labelledby="page">
+    <div>
+      <h2 id="page"></h2>
+      <p id="count"></p>
+    </div>
+    <button id="reload" type="button">Reload</button>
+  </section>
   <p id="notice" role="status"></p>
   <ul id="scripts"></ul>
-  <p id="empty"></p>
+  <div id="empty" hidden>
+    <p id="empty-text"></p>
+  </div>
   <footer>
-    <button id="reload" type="button">Reload tab</button>
-    <button id="check" type="button">Check this page</button>
-    <button id="manager" type="button">Open manager</button>
+    <button id="create" type="button" class="primary">+ New script for this site</button>
+    <div class="links">
+      <button id="check" type="button" class="link">Check this page</button>
+      <button id="manager" type="button" class="link">Open manager</button>
+    </div>
   </footer>
 </body>
 </html>

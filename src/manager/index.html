@@ -10,39 +10,51 @@
 </head>
 <body>
   <header class="app-header">
-    <h1><img src="../icons/logo.svg" alt="" width="32" height="32">Tailorscript</h1>
+    <h1><img src="../icons/logo.svg" alt="" width="28" height="28">Tailorscript</h1>
     <div class="header-actions">
-      <label class="toggle"><input type="checkbox" id="pause-all"> Pause all scripts</label>
-      <button id="site-access" type="button">Site access</button>
-      <button id="inspect" type="button" aria-expanded="false" aria-controls="diagnostics">Check a page</button>
+      <label class="switch-label"><input type="checkbox" role="switch" class="switch" id="pause-all"> Pause all</label>
+      <button id="inspect" type="button" class="ghost" aria-expanded="false" aria-controls="diagnostics">Check a page</button>
+      <button id="site-access" type="button" class="ghost">Site access</button>
+      <details class="menu">
+        <summary class="icon-button" aria-label="More actions" title="More actions">⋯</summary>
+        <div class="menu-items" role="menu">
+          <button id="import" type="button" role="menuitem">Import scripts…</button>
+          <button id="export" type="button" role="menuitem">Export backup</button>
+          <button id="backup" type="button" role="menuitem">Settings &amp; backup…</button>
+          <hr>
+          <button id="trash" type="button" role="menuitem">Trash</button>
+        </div>
+      </details>
+      <input id="import-file" type="file" accept=".js,.json" hidden>
     </div>
   </header>
-  <p id="paused-banner" role="status" hidden>All scripts are paused and won’t run on new page loads.
-    <button id="resume" type="button">Resume</button></p>
+  <p id="paused-banner" class="banner" role="status" hidden>
+    <span><strong>All scripts are paused.</strong> They won’t run on new page loads until you resume.</span>
+    <button id="resume" type="button">Resume</button>
+  </p>
+  <section class="diagnostics" id="diagnostics" aria-labelledby="diagnostics-title" hidden>
+    <h2 id="diagnostics-title">Check a page</h2>
+    <label for="diagnostic-url">Page URL</label>
+    <input id="diagnostic-url" type="url" placeholder="https://example.com/">
+    <p id="diagnostic-message" role="status"></p>
+    <ul id="diagnostic-results"></ul>
+  </section>
   <main>
-    <section class="diagnostics" id="diagnostics" hidden>
-      <h2>Page diagnostics</h2>
-      <label for="diagnostic-url">Page URL</label>
-      <input id="diagnostic-url" type="url" placeholder="https://example.com/">
-      <p id="diagnostic-message" role="status"></p>
-      <ul id="diagnostic-results"></ul>
-    </section>
     <aside aria-labelledby="library-title">
-      <div class="toolbar library-heading">
+      <div class="library-heading">
         <h2 id="library-title">Scripts</h2>
-        <button id="new" type="button">New script</button>
+        <button id="new" type="button" class="primary">+ New script</button>
       </div>
       <label class="sr-only" for="search">Search scripts</label>
-      <input id="search" type="search" placeholder="Search by name, site, or tag">
+      <input id="search" type="search" placeholder="Search name, site or tag">
+      <div class="chips" role="radiogroup" aria-label="Show">
+        <label><input type="radio" name="filter" value="all" checked> All</label>
+        <label><input type="radio" name="filter" value="enabled"> On</label>
+        <label><input type="radio" name="filter" value="disabled"> Off</label>
+        <label><input type="radio" name="filter" value="attention"> Issues</label>
+        <label><input type="radio" name="filter" value="page"> Checked page</label>
+      </div>
       <div class="library-filters">
-        <label class="sr-only" for="filter">Show</label>
-        <select id="filter">
-          <option value="all">All scripts</option>
-          <option value="enabled">Enabled</option>
-          <option value="disabled">Disabled</option>
-          <option value="attention">Needs attention</option>
-          <option value="page">Run on checked page</option>
-        </select>
         <label class="sr-only" for="tag">Tag</label>
         <select id="tag"><option value="">All tags</option></select>
         <label class="sr-only" for="sort">Sort by</label>
@@ -54,51 +66,60 @@
       </div>
       <div id="scripts"></div>
       <p id="library-empty"></p>
-      <div class="file-actions">
-        <button id="import" type="button">Import scripts</button>
-        <button id="export" type="button">Export backup</button>
-        <button id="backup" type="button">Backup settings</button>
-        <button id="trash" type="button">Trash</button>
-        <input id="import-file" type="file" accept=".js,.json" hidden>
-      </div>
       <p id="backup-state"></p>
     </aside>
     <form aria-labelledby="script-title">
-      <div class="toolbar editor-heading">
-        <h2 id="script-title">New script</h2>
-        <button type="submit" id="save">Save script</button>
+      <div class="editor-heading">
+        <div class="title-group">
+          <h2 id="script-title">New script</h2>
+          <span id="script-state" class="pill"></span>
+          <span id="draft-state" role="status"></span>
+        </div>
+        <div class="editor-actions">
+          <label class="switch-label"><input type="checkbox" role="switch" class="switch" id="enabled"> Enabled</label>
+          <button type="submit" id="save" class="primary">Save</button>
+          <details class="menu">
+            <summary class="icon-button" aria-label="Script actions" title="Script actions">⋯</summary>
+            <div class="menu-items" role="menu">
+              <button id="history" type="button" role="menuitem" hidden>Version history…</button>
+              <button id="values" type="button" role="menuitem" hidden>Stored values…</button>
+              <div id="order-controls" hidden>
+                <span id="order-label" class="menu-label"></span>
+                <button id="move-up" type="button" role="menuitem">Run earlier</button>
+                <button id="move-down" type="button" role="menuitem">Run later</button>
+              </div>
+              <hr>
+              <button type="button" id="delete" role="menuitem" class="danger" hidden>Move to Trash</button>
+            </div>
+          </details>
+        </div>
       </div>
-      <div class="script-options">
-        <label class="toggle"><input type="checkbox" id="enabled"> Enable on matching pages</label>
-        <label class="toggle"><input type="checkbox" id="reload-after-save"> Reload matching tabs after saving</label>
-        <span id="draft-state" role="status"></span>
-        <div id="targets"></div>
-        <div id="run-state"></div>
-      </div>
+      <div id="targets"></div>
+      <div id="run-state"></div>
       <details id="setup">
-        <summary>Set name and sites</summary>
+        <summary>Name and sites</summary>
         <div class="setup-fields">
           <label for="setup-name">Script name</label>
           <input id="setup-name" type="text" placeholder="My script">
           <label for="setup-sites">Sites where the script should run</label>
           <textarea id="setup-sites" rows="3" spellcheck="false" placeholder="https://example.com/*" aria-describedby="setup-help"></textarea>
-          <p id="setup-help">Enter one match rule per line. Use <code>/*</code> for every page on a site.</p>
+          <p id="setup-help">One match rule per line. Use <code>/*</code> for every page on a site.</p>
           <button id="apply-setup" type="button">Apply to source</button>
         </div>
       </details>
-      <label class="source-label" for="source">JavaScript</label>
+      <label class="sr-only" for="source">JavaScript</label>
       <div class="find-bar" id="find-bar" role="search" hidden>
         <label class="sr-only" for="find-input">Find</label>
         <input id="find-input" type="search" placeholder="Find" spellcheck="false">
         <label class="sr-only" for="replace-input">Replace with</label>
         <input id="replace-input" type="text" placeholder="Replace" spellcheck="false">
-        <label class="toggle"><input type="checkbox" id="find-case"> Match case</label>
+        <label class="check-label"><input type="checkbox" id="find-case"> Aa</label>
         <span id="find-count" role="status"></span>
         <div class="find-actions">
           <button id="find-previous" type="button" aria-label="Previous match">↑</button>
           <button id="find-next" type="button" aria-label="Next match">↓</button>
           <button id="replace-one" type="button">Replace</button>
-          <button id="replace-all" type="button">Replace all</button>
+          <button id="replace-all" type="button">All</button>
           <button id="find-close" type="button" aria-label="Close find">✕</button>
         </div>
       </div>
@@ -108,29 +129,21 @@
         <textarea id="source" spellcheck="false" autocapitalize="off" autocomplete="off"
           wrap="off" aria-describedby="editor-help validation" required></textarea>
       </div>
-      <div class="editor-footer">
-        <span id="editor-help"><kbd data-shortcut="S"></kbd> Save · <kbd data-shortcut="F"></kbd> Find ·
-          <kbd data-shortcut="]"></kbd> Indent · <kbd data-shortcut="["></kbd> Outdent · <kbd data-shortcut="/"></kbd> Comment</span>
+      <div class="status-bar">
+        <p id="validation" aria-live="polite"></p>
+        <span id="editor-help"><kbd data-shortcut="S"></kbd> Save <kbd data-shortcut="F"></kbd> Find
+          <kbd data-shortcut="]"></kbd> <kbd data-shortcut="["></kbd> Indent <kbd data-shortcut="/"></kbd> Comment</span>
         <span id="cursor-position"></span>
       </div>
-      <p id="validation" aria-live="polite"></p>
       <p id="status" role="status"></p>
-      <div class="toolbar secondary-actions">
-        <button id="history" type="button" hidden>Version history</button>
-        <button id="values" type="button" hidden>Stored values</button>
-        <span id="order-controls" hidden>
-          <span id="order-label"></span>
-          <button id="move-up" type="button">Run earlier</button>
-          <button id="move-down" type="button">Run later</button>
-        </span>
-        <button type="button" id="delete" hidden>Move to Trash</button>
-      </div>
     </form>
   </main>
   <dialog id="review" aria-labelledby="review-title">
-    <h2 id="review-title"></h2>
+    <div class="dialog-header">
+      <h2 id="review-title"></h2>
+      <form method="dialog"><button class="icon-button" aria-label="Close">✕</button></form>
+    </div>
     <div id="review-content"></div>
-    <form method="dialog"><button>Close</button></form>
   </dialog>
 </body>
 </html>

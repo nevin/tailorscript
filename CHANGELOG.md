@@ -8,8 +8,13 @@ All notable changes to Tailorscript are recorded here. Versions follow [Semantic
 - Build, check, package and Chrome Web Store submission scripts, CI and release workflows.
 - ESLint configuration and a `node:test` suite covering parsing, registration, the service worker, sync backup, packaging and submission.
 
+- "New script for this site" in the popup opens the template picker with the current site filled in.
+
 ### Changed
 - Source reorganised under `src/` into background, manager, popup and shared modules.
+- Manager redesign: full-height layout, on/off switches, status dots and pills, filter chips, match rules shown as chips, a clear error callout with Go to line, and overflow menus for library and script actions.
+- "Reload matching tabs after saving" moved into a Settings & backup dialog.
+- Popup redesign: site header with script count, switches, plainer status text and an empty state.
 
 ## [0.4.0]
 
