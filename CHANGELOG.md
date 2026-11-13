@@ -6,6 +6,7 @@ All notable changes to Tailorscript are recorded here. Versions follow [Semantic
 
 ### Added
 - Project page with install steps and the privacy policy, published to GitHub Pages from `site/`.
+- MIT licence.
 
 ## [0.5.0]
 

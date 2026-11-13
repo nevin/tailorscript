@@ -147,3 +147,7 @@ When two manager tabs edit the same script, or the popup changes it while you ha
 - **Backup settings** can copy script sources to Chrome sync after every change (about 100 KB total, sources only) and restore them on another profile.
 - **Import scripts** accepts a backup or a `.user.js` file. The review lets you skip scripts, add copies, or replace a script with the same name. Imported and replaced scripts are disabled until you review them. Site grants, enabled settings, and stored values are not included.
 - **Version history** keeps 25 previous versions per script. Label a version, compare it line by line with the editor, or load it and save to restore it.
+
+## License
+
+Tailorscript is released under the [MIT License](LICENSE). The vendored acorn and CodeMirror code keep their own MIT licences in `src/vendor/`.
