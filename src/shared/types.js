@@ -111,7 +111,9 @@
  *   showDiagnostics?: boolean,
  *   focusScript?: string,
  *   focusMessage?: string,
- *   newScriptSite?: string
+ *   newScriptSite?: string,
+ *   pendingEnable?: { id: string, at: number },
+ *   newScriptSource?: string
  * }} SessionStore
  */
 

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Tailorscript – Userscript Manager",
   "short_name": "Tailorscript",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Tailor websites with your own JavaScript. A private userscript manager that keeps scripts in your browser.",
   "minimum_chrome_version": "138",
   "permissions": [

@@ -145,3 +145,25 @@ test("a script can't act as another script or skip the token", async () => {
   assert.doesNotMatch(genuine.error ?? "", /didn’t come from/);
   assert.equal(typeof chrome.storage.local.data.bridgeSecret, "string");
 });
+
+test("a script the popup asked to turn on is enabled once site access is granted", async () => {
+  await call({ type: "save", id: "pending", script: { source: userscript("1;"), enabled: false }, expected: null });
+  const contains = chrome.permissions.contains;
+  chrome.permissions.contains = async () => false;
+  await chrome.storage.session.set({ pendingEnable: { id: "pending", at: Date.now() } });
+  listeners.permissionsAdded();
+  await settle();
+  assert.equal(find("pending").enabled, false, "stays off until its own sites are granted");
+  chrome.permissions.contains = contains;
+  listeners.permissionsAdded();
+  await settle();
+  assert.equal(find("pending").enabled, true);
+  assert.equal((await chrome.storage.session.get("pendingEnable")).pendingEnable, undefined);
+
+  await call({ type: "toggle", id: "pending", enabled: false });
+  await chrome.storage.session.set({ pendingEnable: { id: "pending", at: Date.now() - 10 * 60 * 1000 } });
+  listeners.permissionsAdded();
+  await settle();
+  assert.equal(find("pending").enabled, false, "an old request is dropped");
+  assert.equal((await chrome.storage.session.get("pendingEnable")).pendingEnable, undefined);
+});

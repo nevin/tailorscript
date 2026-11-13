@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scripting guide · Tailorscript</title>
+  <link rel="icon" href="../icons/logo.svg">
+  <link rel="stylesheet" href="guide.css">
+  <script type="module" src="guide.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <h1><img src="../icons/logo.svg" alt="" width="28" height="28">Tailorscript <span>Scripting guide</span></h1>
+    <a href="../manager/index.html" id="open-manager">Open the manager</a>
+  </header>
+  <div class="layout">
+    <nav aria-label="Guide contents">
+      <label class="sr-only" for="filter">Find in the guide</label>
+      <input id="filter" type="search" placeholder="Find an API, such as clipboard">
+      <p id="filter-empty" hidden>Nothing in the guide matches. Try a shorter word.</p>
+      <ol id="contents">
+        <li><a href="#start">Start here</a></li>
+        <li><a href="#first-script">Your first script</a></li>
+        <li><a href="#header">The header</a></li>
+        <li><a href="#gm">What GM APIs are</a></li>
+        <li><a href="#apis">What you can do</a><ol id="topic-links"></ol></li>
+        <li><a href="#mistakes">When something goes wrong</a></li>
+        <li><a href="#metadata">Every header line</a></li>
+      </ol>
+    </nav>
+    <main>
+      <section id="start" class="prose">
+        <h2>Start here</h2>
+        <p>A <strong>userscript</strong> is a small piece of JavaScript that Tailorscript runs for you on the websites you choose. It can restyle a page, hide clutter, add a button, fill in a form or fetch extra information: anything you could do by typing JavaScript into the browser's console, done automatically each time the page loads.</p>
+        <p>You don't need to know JavaScript well to begin. Most useful scripts are a few lines long, and every example in this guide is a complete script you can copy, change and run.</p>
+        <p>Every userscript has two parts:</p>
+        <pre class="code" id="anatomy"></pre>
+        <ul>
+          <li><strong>The header</strong> is the block of comments between <code>==UserScript==</code> and <code>==/UserScript==</code>. It tells Tailorscript the script's name, which pages it runs on and which extra abilities it needs.</li>
+          <li><strong>The code</strong> is everything after the header. It is ordinary JavaScript that runs on the page.</li>
+        </ul>
+      </section>
+
+      <section id="first-script" class="prose">
+        <h2>Your first script</h2>
+        <ol class="steps">
+          <li>In the manager, choose <strong>+ New script</strong> and pick a template. <em>Add CSS</em> is a good first one.</li>
+          <li>Open <strong>Name and sites</strong>, give the script a name and enter the site it should run on, such as <code>https://example.com/*</code>. The <code>/*</code> means every page on that site.</li>
+          <li>Change the code. The editor suggests names as you type, underlines problems and offers fixes for them.</li>
+          <li>Turn on <strong>Enabled</strong> and choose <strong>Save</strong>. Chrome asks you to let Tailorscript work on that site; choose <strong>Allow</strong>.</li>
+          <li>Open or reload a page on the site. The Tailorscript toolbar button shows which scripts ran, and reports the line of any error.</li>
+        </ol>
+        <p>To see what a script is doing, open the page's developer tools (right-click the page, choose <strong>Inspect</strong>, then <strong>Console</strong>). Anything the script passes to <code>console.log()</code> appears there.</p>
+      </section>
+
+      <section id="header" class="prose">
+        <h2>The header</h2>
+        <p>Each header line starts with <code>// @</code>, then a key, then its value. These are the ones you will use most:</p>
+        <dl class="keys">
+          <dt><code>@name</code></dt><dd>What the script is called in the manager and the popup.</dd>
+          <dt><code>@match</code></dt><dd>A page the script runs on. Use one line for each site: <code>https://example.com/*</code> for every page on a site, or <code>https://*.example.com/*</code> to include its subdomains.</dd>
+          <dt><code>@grant</code></dt><dd>A GM API the script uses. Use one line for each API. See <a href="#gm">What GM APIs are</a>.</dd>
+          <dt><code>@run-at</code></dt><dd>When the script runs. <code>document-idle</code>, the default, waits for the page to load. <code>document-start</code> runs before the page appears, which suits styles.</dd>
+          <dt><code>@connect</code></dt><dd>A site the script may send requests to. See <a href="#xhr">Get data from another site</a>.</dd>
+          <dt><code>@require</code></dt><dd>The address of a JavaScript library to load before your code.</dd>
+        </dl>
+        <p>The <strong>Name and sites</strong> panel in the editor writes <code>@name</code> and <code>@match</code> for you. <a href="#metadata">Every header line</a> lists the rest.</p>
+      </section>
+
+      <section id="gm" class="prose">
+        <h2>What GM APIs are</h2>
+        <p>JavaScript on a web page is deliberately limited. It can't keep data once the page closes, can't read other websites and can't show a desktop notification without asking. <strong>GM APIs</strong> are extra functions Tailorscript gives your script to do those things. “GM” comes from Greasemonkey, the first userscript manager; other managers use the same names, so scripts written for them work here too.</p>
+        <p>Using one takes two steps:</p>
+        <ol class="steps">
+          <li><strong>Ask for it in the header</strong> with a <code>@grant</code> line naming the function.</li>
+          <li><strong>Call it in your code</strong> like any other function.</li>
+        </ol>
+        <pre class="code" id="grant-example"></pre>
+        <p>The <code>@grant</code> line is there so that anyone reading a script, including you before installing one, can see at a glance what it is able to do. If you call an API you haven't asked for, the editor underlines it and offers to add the line.</p>
+        <h3>Two spellings</h3>
+        <p>Most APIs come in two forms that do the same job:</p>
+        <dl class="keys">
+          <dt><code>GM_setValue(…)</code></dt><dd>The older form, with an underscore. It gives its answer straight away, which is simpler when you are starting out.</dd>
+          <dt><code>GM.setValue(…)</code></dt><dd>The newer form, with a dot. It returns a promise, so you write <code>await</code> in front of it inside an <code>async</code> function.</dd>
+        </dl>
+        <p>Pick whichever you prefer. Each spelling needs its own <code>@grant</code> line, written exactly as you call it.</p>
+        <h3>Scripts that need none</h3>
+        <p>A script that only reads or changes the page needs no GM APIs. Write <code>// @grant none</code> to say so.</p>
+      </section>
+
+      <section id="apis">
+        <div class="prose">
+          <h2>What you can do</h2>
+          <p>Each task below explains one group of APIs, with a complete script. <strong>Start a script from this</strong> opens the example in the editor, ready to change.</p>
+        </div>
+        <div id="topics"></div>
+      </section>
+
+      <section id="mistakes" class="prose">
+        <h2>When something goes wrong</h2>
+        <dl id="mistake-list" class="keys stacked"></dl>
+      </section>
+
+      <section id="metadata" class="prose">
+        <h2>Every header line</h2>
+        <p>All the keys Tailorscript understands. Hover over a key in the editor to see the same description there.</p>
+        <dl id="metadata-list" class="keys"></dl>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

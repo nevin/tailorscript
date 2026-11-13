@@ -2,6 +2,7 @@
 // code-editor.js adapts these results to CodeMirror completions, diagnostics and tooltips.
 import { addMetadata, allows, grantFamilies, parseSource, supportedGrants, syncValueGrants } from "../shared/userscript.js";
 import { parse, tokenizer } from "../vendor/acorn/acorn.mjs";
+import { guideAnchor } from "../guide/render.js";
 import { gmApis, ignoredKeys, metadataKeys, metadataValues, signature } from "./gm-api.js";
 
 const familyOf = name => Object.keys(grantFamilies).find(family => grantFamilies[family].includes(name));
@@ -304,10 +305,10 @@ export function hoverAt(source, pos, meta = metadataLines(source)) {
     const line = lines.find(item => pos >= item.from && pos <= item.to);
     if (!line) return null;
     if (pos >= line.keyFrom - 1 && pos <= line.keyTo && metadataKeys[line.key]) {
-      return { from: line.keyFrom - 1, to: line.keyTo, title: `@${line.key}`, doc: metadataKeys[line.key] };
+      return { from: line.keyFrom - 1, to: line.keyTo, title: `@${line.key}`, doc: metadataKeys[line.key], guide: guideAnchor(`@${line.key}`) };
     }
     if (line.key === "grant" && pos >= line.valueFrom && pos <= line.valueTo && gmApis[line.value]) {
-      return { from: line.valueFrom, to: line.valueTo, title: signature(line.value), doc: gmApis[line.value].doc };
+      return { from: line.valueFrom, to: line.valueTo, title: signature(line.value), doc: gmApis[line.value].doc, guide: guideAnchor(line.value) };
     }
     return null;
   }
@@ -319,7 +320,7 @@ export function hoverAt(source, pos, meta = metadataLines(source)) {
     const name = parts[index] === "GM" && parts[index + 1] ? `GM.${parts[index + 1]}` : parts[index];
     const nameEnd = name.includes(".") ? end + 1 + parts[index + 1].length : end;
     if (gmApis[name] && pos >= offset && pos <= nameEnd && (index === 0 || parts[index - 1] === "" || name.startsWith("GM."))) {
-      return { from: offset, to: nameEnd, title: signature(name), doc: [gmApis[name].doc, grantInfo(name)].filter(Boolean).join(" ") };
+      return { from: offset, to: nameEnd, title: signature(name), doc: [gmApis[name].doc, grantInfo(name)].filter(Boolean).join(" "), guide: guideAnchor(name) };
     }
     offset = end + 1;
   }

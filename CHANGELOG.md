@@ -4,9 +4,15 @@ All notable changes to Tailorscript are recorded here. Versions follow [Semantic
 
 ## [Unreleased]
 
+## [0.6.0]
+
 ### Added
 - Project page with install steps and the privacy policy, published to GitHub Pages from `site/`.
 - MIT licence.
+- Scripting guide inside the extension, for people new to userscripts: what a script and its header are, what GM APIs are and how `@grant` works, a task-by-task reference with a complete example for every API, common mistakes and every header key. **Start a script from this** opens an example in the editor. Reach it from **Guide** in the manager, the popup, the template picker, or the link in the editor's hover docs.
+
+### Changed
+- Turning a script on in the popup now asks for site access there, instead of opening the manager.
 
 ## [0.5.0]
 

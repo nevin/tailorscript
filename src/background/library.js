@@ -1,5 +1,5 @@
 // Changes to the script library, applied one at a time through the write queue.
-import { getLocal, readScripts, readSettings, writeScripts } from "../shared/storage.js";
+import { getLocal, getSession, readScripts, readSettings, writeScripts } from "../shared/storage.js";
 import { backupToSync } from "../shared/sync-backup.js";
 import { addMetadata, parseSource } from "../shared/userscript.js";
 import { validate } from "../shared/validate.js";
@@ -11,6 +11,7 @@ import { sourceHash } from "./updates.js";
 const settingTypes = { paused: "boolean", reloadAfterSave: "boolean", syncBackup: "boolean", lastExportAt: "number" };
 const trashDays = 30;
 const historyLimit = 25;
+const pendingEnableMs = 2 * 60 * 1000;
 
 export function showPaused(paused) {
   chrome.action?.setBadgeText({ text: paused ? "off" : "" }).catch(ignore);
@@ -49,6 +50,22 @@ export async function commit(scripts, extra = {}) {
   await writeScripts(scripts, extra);
   await backup(scripts);
   return reconcile(scripts);
+}
+
+// The popup closes while Chrome asks for site access, so it can't finish turning a script on itself. It leaves a
+// note first, and the script is turned on here once the access it needs has been granted.
+export async function enablePending() {
+  const { pendingEnable } = await getSession("pendingEnable");
+  if (!pendingEnable) return;
+  const scripts = await readScripts();
+  const index = scripts.findIndex(script => script.id === pendingEnable.id);
+  if (index === -1 || Date.now() - pendingEnable.at > pendingEnableMs) {
+    await chrome.storage.session.remove("pendingEnable");
+    return;
+  }
+  if (!await chrome.permissions.contains({ origins: parseSource(scripts[index].source).origins })) return;
+  await chrome.storage.session.remove("pendingEnable");
+  if (!scripts[index].enabled) await handlers.toggle({ enabled: true }, scripts, index);
 }
 
 export function withHistory(current, source) {

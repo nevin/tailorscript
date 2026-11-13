@@ -262,6 +262,7 @@ main form { display: flex; flex-direction: column; gap: .6rem; min-width: 0; min
 .cm-doc-title { font: .8rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--syntax-function); overflow-wrap: anywhere; }
 .cm-active-param { color: var(--text); background: var(--accent-soft); border-radius: 3px; padding: 0 .15rem; }
 .cm-doc-body { margin: 0; font: .8rem/1.45 system-ui, sans-serif; color: var(--muted); }
+.cm-doc-link { font: .8rem/1.45 system-ui, sans-serif; color: var(--accent); }
 .cm-tooltip-lint { padding: 0; }
 .cm-diagnostic { padding: .35rem .6rem; font: .8rem/1.45 system-ui, sans-serif; }
 .cm-diagnosticAction { min-height: 0; margin-left: .5rem; padding: .1rem .5rem; background: var(--accent); border: 0; border-radius: 4px; color: var(--on-accent); font: 600 .75rem system-ui, sans-serif; }
@@ -304,6 +305,8 @@ dialog::backdrop { background: #0b141680; backdrop-filter: blur(2px); }
 .template-list button { display: grid; justify-items: start; gap: .2rem; padding: .7rem .8rem; text-align: left; white-space: normal; }
 .template-list button:hover { background: var(--accent-soft); }
 .template-list span { font-size: .8rem; color: var(--muted); }
+.template-help { margin: .9rem 0 0; font-size: .85rem; color: var(--muted); }
+.template-help a { color: var(--accent); }
 .import-note, .trash-age, .access-users, .diff-help, .backup-help { color: var(--muted); font-size: .84rem; }
 .import-note:empty { display: none; }
 .version-actions { display: flex; flex-wrap: wrap; gap: .4rem; margin: .6rem 0; }

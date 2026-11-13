@@ -191,3 +191,20 @@ test("the editor closes brackets, completes GM APIs and shows parameter hints", 
   await manager.waitForSelector(".cm-signature", { timeout: 5000 });
   assert.match(await manager.$eval(".cm-signature .cm-active-param", node => node.textContent), /^css/);
 });
+
+test("the scripting guide opens and hands an example to the manager", async () => {
+  // Discard the unsaved script from the editor test, so the manager can load the example without asking.
+  manager.once("dialog", dialog => dialog.accept());
+  await manager.reload();
+  await manager.waitForSelector(".cm-content");
+  const guide = await browser.newPage();
+  await guide.goto(`chrome-extension://${extensionId}/guide/guide.html#GM_setValue`);
+  await guide.waitForSelector("#values.found");
+  assert.equal(await guide.$$eval(".topic", topics => topics.length), 10);
+  await guide.click("#values .example-actions .primary");
+  await manager.waitForFunction(() => document.querySelector("#status").textContent.startsWith("Example loaded"));
+  const text = await manager.evaluate(() => [...document.querySelectorAll(".cm-line")].map(line => line.textContent).join("\n"));
+  assert.match(text, /@name\s+Count my visits/);
+  assert.match(text, /GM\.setValue\("visits"/);
+  await guide.close();
+});

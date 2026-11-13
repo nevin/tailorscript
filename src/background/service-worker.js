@@ -3,7 +3,7 @@ import { checkMessage, pageMessages, scriptMessages } from "../shared/messages.j
 import { migrate, readScripts, readSettings } from "../shared/storage.js";
 import { authenticate } from "./bridge-token.js";
 import { collectDiagnostics } from "./diagnostics.js";
-import { handlers, preparers, purgeExpired, reconcile } from "./library.js";
+import { enablePending, handlers, preparers, purgeExpired, reconcile } from "./library.js";
 import { enqueue, ignore } from "./queue.js";
 import {
   abortRequest, notificationClicked, notificationClosed, recordMenu, recordRun, scriptHandlers, tabLoading, tabRemoved
@@ -43,7 +43,10 @@ chrome.runtime.onInstalled.addListener(() => {
   setupInstallRedirect().catch(error => console.warn(error.message));
 });
 chrome.runtime.onStartup.addListener(refresh);
-chrome.permissions.onAdded.addListener(refresh);
+chrome.permissions.onAdded.addListener(() => {
+  enqueue(enablePending).catch(error => console.warn(error.message));
+  refresh();
+});
 chrome.permissions.onRemoved.addListener(refresh);
 
 chrome.alarms?.onAlarm.addListener(alarm => {

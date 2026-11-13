@@ -159,10 +159,18 @@ async function render() {
 async function setEnabled(script, toggle) {
   notice.textContent = "";
   try {
-    if (toggle.checked && !await chrome.permissions.contains({ origins: parseSource(script.source).origins })) {
-      toggle.checked = false;
-      await openManager({ focusScript: script.id, focusMessage: "Turn on Enabled and save to grant site access." });
-      return;
+    const { origins } = parseSource(script.source);
+    if (toggle.checked && !await chrome.permissions.contains({ origins })) {
+      // Chrome closes the popup while it asks, so the service worker finishes the job once access is granted
+      // (enablePending in background/library.js). If the popup stays open, the lines below do it instead.
+      await chrome.storage.session.set({ pendingEnable: { id: script.id, at: Date.now() } });
+      const granted = await chrome.permissions.request({ origins });
+      await chrome.storage.session.remove("pendingEnable");
+      if (!granted) {
+        toggle.checked = false;
+        notice.textContent = "Site access was declined, so the script stays off.";
+        return;
+      }
     }
     await send({ type: "toggle", id: script.id, enabled: toggle.checked });
     notice.textContent = "Reload the tab to apply this change.";
@@ -206,6 +214,10 @@ find.addEventListener("click", async () => {
 check.addEventListener("click", () => openManager({ diagnosticUrl: url.href, showDiagnostics: Date.now() }));
 create.addEventListener("click", () => openManager({ newScriptSite: `${url.origin}/*` }));
 $("#manager", HTMLButtonElement).addEventListener("click", () => openManager());
+$("#guide", HTMLButtonElement).addEventListener("click", async () => {
+  await chrome.tabs.create({ url: chrome.runtime.getURL("guide/guide.html") });
+  window.close();
+});
 chrome.storage.onChanged.addListener(render);
 
 await render();

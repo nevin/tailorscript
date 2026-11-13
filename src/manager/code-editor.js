@@ -71,16 +71,22 @@ const metadataDecorations = ViewPlugin.fromClass(class {
   }
 }, { decorations: plugin => plugin.decorations });
 
-function docTooltip(title, doc) {
+function docTooltip(title, doc, guide) {
   const dom = element("div", "cm-doc-tooltip");
   dom.append(element("code", "cm-doc-title", title));
   if (doc) dom.append(element("p", "cm-doc-body", doc));
+  if (guide) {
+    const link = element("a", "cm-doc-link", "Explanation and example in the guide");
+    link.href = `../guide/guide.html${guide}`;
+    link.target = "tailorscript-guide";
+    dom.append(link);
+  }
   return { dom };
 }
 
 const hovers = hoverTooltip((view, pos) => {
   const info = hoverAt(view.state.doc.toString(), pos, view.state.field(metadataField));
-  return info && { pos: info.from, end: info.to, above: true, create: () => docTooltip(info.title, info.doc) };
+  return info && { pos: info.from, end: info.to, above: true, create: () => docTooltip(info.title, info.doc, info.guide) };
 });
 
 // Shows the parameters of the GM call the cursor is in, with the current one emphasised.

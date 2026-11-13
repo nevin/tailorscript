@@ -29,6 +29,7 @@ src/                 The extension, loadable as-is
   manager/           Full-page script manager and its editor, diff, import and template modules
   popup/             Toolbar popup
   install/           Install page for .user.js links
+  guide/             Scripting guide: userscript basics and each GM API with an example
   shared/            Metadata parsing, validation, storage and sync backup used by every page
   icons/             Logo sources (SVG) and the PNG sizes Chrome needs
   vendor/acorn/      Vendored JavaScript parser (MIT)
@@ -64,7 +65,7 @@ See [docs/architecture.md](docs/architecture.md) for how the pieces talk to each
 
 ## The toolbar popup
 
-The toolbar badge counts the scripts that ran on the current tab and turns red when one of them threw an error. The popup lists the scripts that match the tab, whether each ran or the error it threw, and a switch to turn it on or off. The **⋯** button on a script offers:
+The toolbar badge counts the scripts that ran on the current tab and turns red when one of them threw an error. The popup lists the scripts that match the tab, whether each ran or the error it threw, and a switch to turn it on or off. If a script needs access to a site it doesn't have yet, Chrome asks right there. The **⋯** button on a script offers:
 
 - **Run now**: run it once on this page, even if it's turned off. Scripts with `@run-at context-menu` only ever run this way.
 - **Edit**: open it in the manager.
@@ -73,6 +74,10 @@ The toolbar badge counts the scripts that ran on the current tab and turns red w
 Commands that scripts add with `GM_registerMenuCommand` appear under the script. **Find scripts for this site** searches Greasy Fork. If the tab shows a `.user.js` file, the popup offers to install it. **Pause all** (or the keyboard shortcut, Alt+Shift+P by default) stops every script on new page loads; the badge shows "off" while paused.
 
 If Chrome's **Allow User Scripts** switch is off, the popup and manager say so and link to the extension's details page.
+
+## Learn to write scripts
+
+**Guide** in the manager (or **Scripting guide** in the popup) opens a guide written for people who have never written a userscript. It explains the header, what GM APIs are and how `@grant` works, then covers each API by task with a complete example you can open in the editor with **Start a script from this**. It ends with common mistakes and a list of every header key. Hovering over a GM API or header key in the editor links to its place in the guide.
 
 ## Install and update scripts
 

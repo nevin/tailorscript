@@ -537,7 +537,9 @@ function openTemplates(site) {
     button.append(element("strong", template.name), element("span", template.description));
     choices.append(button);
   }
-  openReview(host ? `New script for ${host}` : "Start a new script", choices);
+  const help = element("p", "New to userscripts? ", "template-help");
+  help.append(guideLink("Read the scripting guide"), ", which explains the header, the GM APIs and has an example for each.");
+  openReview(host ? `New script for ${host}` : "Start a new script", choices, help);
 }
 newButton.addEventListener("click", () => openTemplates());
 
@@ -637,6 +639,25 @@ window.addEventListener("focus", () => {
   if (registrationState?.setupNeeded && !busy) perform(() => send({ type: "sync" }));
 });
 
+// The scripting guide opens in one tab that later links reuse.
+function guideLink(text, anchor = "") {
+  const link = document.createElement("a");
+  link.href = `../guide/guide.html${anchor}`;
+  link.target = "tailorscript-guide";
+  link.textContent = text;
+  return link;
+}
+$("#guide", HTMLButtonElement).addEventListener("click", () => window.open("../guide/guide.html", "tailorscript-guide"));
+
+// "Start a script from this" in the guide: opens the example as a new, unsaved script.
+function exampleRequested(example) {
+  chrome.storage.session.remove("newScriptSource");
+  if (!canLeave()) return;
+  if (review.open) review.close();
+  select(undefined, false, example);
+  status.textContent = "Example loaded. Set the site under Name and sites, then turn on Enabled and save.";
+}
+
 function newScriptRequested(site) {
   chrome.storage.session.remove("newScriptSite");
   openTemplates(site);
@@ -702,6 +723,7 @@ chrome.storage.onChanged.addListener((/** @type {Record<string, { newValue?: any
   if (changes.runs) runs = changes.runs.newValue ?? {};
   if (changes.focusScript?.newValue) focusRequested(changes.focusScript.newValue, changes.focusMessage?.newValue);
   if (changes.newScriptSite?.newValue) newScriptRequested(changes.newScriptSite.newValue);
+  if (changes.newScriptSource?.newValue) exampleRequested(changes.newScriptSource.newValue);
   if (changes.registrationState) {
     // Only replace a registration message, so results such as "Saved." stay visible.
     const previous = selectedId && registrationMessage(selectedId);
@@ -713,7 +735,7 @@ chrome.storage.onChanged.addListener((/** @type {Record<string, { newValue?: any
 
 await perform(async () => {
   await reloadData();
-  const context = await getSession(["diagnosticUrl", "runs", "focusScript", "focusMessage", "newScriptSite"]);
+  const context = await getSession(["diagnosticUrl", "runs", "focusScript", "focusMessage", "newScriptSite", "newScriptSource"]);
   runs = context.runs ?? {};
   diagnosticUrl.value = context.diagnosticUrl ?? "";
   if (diagnosticUrl.value) showDiagnostics(true);
@@ -722,4 +744,5 @@ await perform(async () => {
   if (selectedId) status.textContent = context.focusMessage || registrationMessage(selectedId);
   if (context.focusScript) chrome.storage.session.remove(["focusScript", "focusMessage"]);
   if (context.newScriptSite) setTimeout(() => newScriptRequested(context.newScriptSite));
+  if (context.newScriptSource) setTimeout(() => exampleRequested(context.newScriptSource));
 });
