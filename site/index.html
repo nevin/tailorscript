@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tailorscript: a private userscript manager for Chrome</title>
+  <meta name="description" content="Tailor websites with your own JavaScript. A private userscript manager for Chrome that keeps scripts in your browser.">
+  <meta property="og:title" content="Tailorscript">
+  <meta property="og:description" content="Tailor websites with your own JavaScript. A private userscript manager for Chrome.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="favicon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top wrap">
+    <a class="brand" href="./"><img src="logo.svg" alt="">Tailorscript</a>
+    <nav aria-label="Site">
+      <a class="optional" href="#features">Features</a>
+      <a href="#install">Install</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="https://github.com/nevin/tailorscript">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="hero wrap">
+      <h1>Tailor websites with <span>your own JavaScript</span></h1>
+      <p class="lede">Tailorscript is a userscript manager for Chrome. Write a script or install one, choose the sites it runs on, and it stays in your browser.</p>
+      <div class="actions">
+        <a class="button primary" href="https://github.com/nevin/tailorscript/releases/latest">Download the latest release</a>
+        <a class="button" href="https://github.com/nevin/tailorscript">View the source</a>
+      </div>
+      <p class="note">Needs Chrome 138 or later. No account, no servers, no tracking.</p>
+    </div>
+
+    <div class="wrap">
+      <figure class="shot">
+        <picture>
+          <source srcset="manager-dark.png" media="(prefers-color-scheme: dark)">
+          <img src="manager-light.png" width="2200" height="1200" alt="The Tailorscript manager: a list of scripts beside a code editor showing a userscript that recolours a page heading.">
+        </picture>
+      </figure>
+    </div>
+
+    <section id="features" class="wrap">
+      <h2>What it does</h2>
+      <ul class="features">
+        <li>
+          <h3>An editor that knows userscripts</h3>
+          <p>Completions for metadata and GM APIs, inline problems with quick fixes, parameter hints, find and replace, and version history with side-by-side comparison.</p>
+        </li>
+        <li>
+          <h3>Install after you review</h3>
+          <p>Open any <code>.user.js</code> link from Greasy Fork, OpenUserJS or GitHub and see the sites, APIs and code before it is added. Updates that need new access wait for you.</p>
+        </li>
+        <li>
+          <h3>See what ran</h3>
+          <p>The toolbar shows which scripts ran on the current page and which hit errors, with a jump to the failing line.</p>
+        </li>
+        <li>
+          <h3>Works with existing scripts</h3>
+          <p><code>@require</code>, <code>@resource</code>, <code>@connect</code>, match and include rules, and the familiar GM APIs: requests, menu commands, notifications, clipboard and stored values.</p>
+        </li>
+        <li>
+          <h3>You stay in control</h3>
+          <p>Run a script once, stop it on one site, set the run order, or pause everything with one switch or a keyboard shortcut.</p>
+        </li>
+        <li>
+          <h3>Hard to lose work</h3>
+          <p>Deleted scripts wait in the Trash for 30 days. Back up to a file or to Chrome sync, and import with a review step.</p>
+        </li>
+      </ul>
+    </section>
+
+    <section id="install" class="wrap">
+      <h2>Install</h2>
+      <ol class="steps">
+        <li><p>Download <code>tailorscript-&lt;version&gt;.zip</code> from the <a href="https://github.com/nevin/tailorscript/releases/latest">latest release</a> and unzip it.</p></li>
+        <li><p>Open <code>chrome://extensions</code> and turn on <strong>Developer mode</strong>.</p></li>
+        <li><p>Choose <strong>Load unpacked</strong> and select the unzipped folder.</p></li>
+        <li><p>Open <strong>Details</strong> for Tailorscript and turn on <strong>Allow User Scripts</strong>. Chrome keeps userscripts off until you do.</p></li>
+        <li><p>Click the Tailorscript toolbar button, choose <strong>Open manager</strong>, and enable the starter script to try it on <code>example.com</code>.</p></li>
+      </ol>
+    </section>
+
+    <section class="privacy-band">
+      <div class="wrap">
+        <h2>Private by design</h2>
+        <p>Your scripts, their history and your settings are kept in your browser's extension storage. Tailorscript has no servers, analytics or advertising, and it asks for access to a site only when you enable a script for it.</p>
+        <p><a href="privacy.html">Read the privacy policy</a></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap">
+    <span>Tailorscript</span>
+    <a href="https://github.com/nevin/tailorscript/releases">Releases</a>
+    <a href="https://github.com/nevin/tailorscript/blob/main/CHANGELOG.md">Changelog</a>
+    <a href="https://github.com/nevin/tailorscript/issues">Report a problem</a>
+    <a href="privacy.html">Privacy</a>
+  </footer>
+</body>
+</html>

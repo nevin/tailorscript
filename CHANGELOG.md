@@ -4,6 +4,9 @@ All notable changes to Tailorscript are recorded here. Versions follow [Semantic
 
 ## [Unreleased]
 
+### Added
+- Project page with install steps and the privacy policy, published to GitHub Pages from `site/`.
+
 ## [0.5.0]
 
 ### Added

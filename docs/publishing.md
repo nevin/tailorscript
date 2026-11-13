@@ -2,7 +2,7 @@
 
 ## One-time setup
 
-1. **Create the store item.** The Web Store API cannot create new items. Run `npm run package`, then upload `release/tailorscript-<version>.zip` once in the [Developer Dashboard](https://chrome.google.com/webstore/devconsole). Fill in the listing with [store-listing.md](store-listing.md) and host [privacy-policy.md](privacy-policy.md) at a public URL.
+1. **Create the store item.** The Web Store API cannot create new items. Run `npm run package`, then upload `release/tailorscript-<version>.zip` once in the [Developer Dashboard](https://chrome.google.com/webstore/devconsole). Fill in the listing with [store-listing.md](store-listing.md) and give <https://nevin.github.io/tailorscript/privacy.html> as the privacy policy URL. That page is `site/privacy.html`; keep it in step with [privacy-policy.md](privacy-policy.md).
 2. **Enable the API.** In a Google Cloud project, enable the *Chrome Web Store API* and configure the OAuth consent screen.
 3. **Create OAuth credentials.** Create an OAuth client ID and note the client ID and secret.
 4. **Get a refresh token** for the `https://www.googleapis.com/auth/chromewebstore` scope, signed in as the account that owns the item. The [official guide](https://developer.chrome.com/docs/webstore/using-api) walks through this.
@@ -27,6 +27,17 @@ npm run submit -- --publish
 | `--zip <path>` | Uploads a specific archive instead of the one for the current version. |
 
 From GitHub, run the **Release to Chrome Web Store** workflow by hand and choose draft, review or staged.
+
+## GitHub release and project page
+
+After the version bump is on `main` and CI has passed, publish the same package on GitHub:
+
+```bash
+npm run release
+gh release create v<version> release/tailorscript-<version>.zip release/tailorscript-<version>.zip.sha256 --title "Tailorscript <version>" --notes-file <notes>
+```
+
+Use that version's section of `CHANGELOG.md` as the notes. The project page at <https://nevin.github.io/tailorscript/> is the `site/` folder; the **Publish site** workflow deploys it whenever `site/` changes on `main`.
 
 ## Notes
 

@@ -2,6 +2,8 @@
 
 Tailor websites with your own JavaScript. Tailorscript is a Chrome 138+ userscript manager that runs your scripts on the HTTP and HTTPS pages you choose. Scripts stay in your Chrome profile and are never sent anywhere.
 
+**[Project page](https://nevin.github.io/tailorscript/)** · **[Download the latest release](https://github.com/nevin/tailorscript/releases/latest)**
+
 ## Install for development
 
 Requires Node.js 22.2 or later (`.nvmrc` pins the CI version).
@@ -35,6 +37,7 @@ scripts/             Build, check, package, dev and Web Store submission tools
 tests/               node:test suites with an in-memory Chrome API mock
 tests/e2e/           Tests that load the built extension in a real Chrome
 docs/                Architecture, publishing guide, store listing and privacy policy
+site/                The project page, published to GitHub Pages from main
 ```
 
 See [docs/architecture.md](docs/architecture.md) for how the pieces talk to each other.
