@@ -116,34 +116,11 @@
           <button id="apply-setup" type="button">Apply to source</button>
         </div>
       </details>
-      <label class="sr-only" for="source">JavaScript</label>
-      <div class="find-bar" id="find-bar" role="search" hidden>
-        <label class="sr-only" for="find-input">Find</label>
-        <input id="find-input" type="search" placeholder="Find" spellcheck="false">
-        <label class="sr-only" for="replace-input">Replace with</label>
-        <input id="replace-input" type="text" placeholder="Replace" spellcheck="false">
-        <label class="check-label"><input type="checkbox" id="find-case"> Aa</label>
-        <span id="find-count" role="status"></span>
-        <div class="find-actions">
-          <button id="find-previous" type="button" aria-label="Previous match">↑</button>
-          <button id="find-next" type="button" aria-label="Next match">↓</button>
-          <button id="replace-one" type="button">Replace</button>
-          <button id="replace-all" type="button">All</button>
-          <button id="find-close" type="button" aria-label="Close find">✕</button>
-        </div>
-      </div>
-      <div class="editor">
-        <div class="gutter" aria-hidden="true"><pre id="line-numbers"></pre></div>
-        <div class="code-layer" aria-hidden="true"><pre id="highlight"></pre></div>
-        <textarea id="source" spellcheck="false" autocapitalize="off" autocomplete="off"
-          wrap="off" aria-describedby="editor-help validation" aria-autocomplete="list" aria-controls="completions" required></textarea>
-        <ul id="completions" role="listbox" aria-label="Suggestions" hidden></ul>
-      </div>
-      <div id="hints"></div>
+      <div class="editor" id="editor"></div>
       <div class="status-bar">
-        <p id="validation" aria-live="polite"></p>
+        <button id="validation" type="button" aria-live="polite"></button>
         <span id="editor-help"><kbd data-shortcut="S"></kbd> Save <kbd data-shortcut="F"></kbd> Find
-          <kbd data-shortcut="]"></kbd> <kbd data-shortcut="["></kbd> Indent <kbd data-shortcut="/"></kbd> Comment</span>
+          <kbd>Ctrl+Space</kbd> Suggest <kbd data-shortcut="/"></kbd> Comment <kbd>F8</kbd> Next problem</span>
         <span id="cursor-position"></span>
       </div>
       <p id="status" role="status"></p>

@@ -214,6 +214,12 @@ export function parseSource(source) {
   };
 }
 
+// Addresses this script's code is fetched from without encryption, where someone on the network could change it.
+export function insecureSources(metadata, installUrl = "") {
+  return [...new Set([installUrl, metadata.updateUrl, metadata.downloadUrl, ...metadata.requires, ...metadata.resources.map(({ url }) => url)]
+    .filter(url => /^http:\/\//i.test(url ?? "")))];
+}
+
 export function originsFor(matches) {
   return [...new Set(matches.map(pattern => pattern.match(/^[^:]+:\/\/[^/]+/)[0] + "/*"))];
 }

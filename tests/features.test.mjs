@@ -178,3 +178,31 @@ test("the pause shortcut toggles every script and the install redirect is regist
   const [, rules] = calls.findLast(([name]) => name === "dnr");
   assert.equal(rules.addRules[0].action.redirect.regexSubstitution, "chrome-extension://test/install/install.html#\\0");
 });
+
+test("security: @connect is checked after redirects", async () => {
+  network.routes["https://api.example.org/hop"] = { body: "secret", redirectedTo: "https://evil.test/landing" };
+  const reply = await fromScript({ type: "xhr", requestId: "r9", request: { url: "https://api.example.org/hop" } }, { userScriptWorldId: "x1", url: "https://a.com/" });
+  assert.match(reply.error, /redirected to evil\.test/);
+  assert.equal(reply.value, undefined);
+});
+
+test("security: scripts are identified only by the world ID Chrome sets", async () => {
+  assert.equal(listeners.userScriptMessage({ type: "value", op: "list", id: "x1" }, {}, () => {}), false);
+});
+
+test("security: resource data URLs keep only a plain media type", async () => {
+  network.routes["https://cdn.example/odd.bin"] = { body: "x", headers: { "content-type": "text/html,<script>alert(1)</script>" } };
+  const saved = await call({ type: "save", id: "r1", script: { source: userscript("x;", "// @resource odd https://cdn.example/odd.bin\n"), enabled: false } });
+  assert.ok(saved.ok, saved.error);
+  assert.match(local["deps:r1"].resources[0].dataUrl, /^data:application\/octet-stream;base64,/);
+});
+
+test("security: updates fetched over http wait for review", async () => {
+  const insecure = (version, extra = "") => userscript("run();", `// @version     ${version}\n// @namespace   plain.org\n${extra}`);
+  const installed = await call({ type: "install", source: insecure("1.0"), url: "http://plain.org/s.user.js", enabled: false }, installUrl);
+  const id = installed.state.installedId;
+  network.routes["http://plain.org/s.user.js"] = insecure("1.1");
+  await call({ type: "check-updates", id });
+  assert.match(find(id).source, /1\.0/);
+  assert.ok(find(id).pendingUpdate.reasons.some(reason => reason.includes("unencrypted http")));
+});

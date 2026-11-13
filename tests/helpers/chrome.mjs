@@ -98,8 +98,11 @@ export function installFetch(routes = {}) {
     requests.push({ url, ...init });
     const route = routes[url];
     if (!route) throw new TypeError("Failed to fetch");
-    const { body = "", status = 200, headers = {} } = typeof route === "string" ? { body: route } : route;
-    return new Response(body, { status, headers });
+    const { body = "", status = 200, headers = {}, redirectedTo } = typeof route === "string" ? { body: route } : route;
+    const response = new Response(body, { status, headers });
+    // Mirrors fetch following a redirect: the response reports the address it ended at.
+    if (redirectedTo) Object.defineProperty(response, "url", { value: redirectedTo });
+    return response;
   };
   return { routes, requests };
 }

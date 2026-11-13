@@ -6,7 +6,7 @@ import { allows, grantFamilies, parseSource, runsOn, targetsMatch, updateTargets
 import { validate } from "../shared/validate.js";
 import { decodeImport } from "./backup-file.js";
 import { diffView } from "./diff.js";
-import { addGrants, completions, editLines, findMatches, highlight, missingGrants } from "./editor.js";
+import { createCodeEditor } from "./code-editor.js";
 import { templates } from "./templates.js";
 
 const starter = `// ==UserScript==
@@ -20,8 +20,6 @@ document.querySelector("h1")?.style.setProperty("color", "rebeccapurple");`;
 
 const list = document.querySelector("#scripts");
 const form = document.querySelector("main form");
-const source = document.querySelector("#source");
-const lineNumbers = document.querySelector("#line-numbers");
 const cursorPosition = document.querySelector("#cursor-position");
 const saveButton = document.querySelector("#save");
 const isMac = navigator.userAgentData?.platform === "macOS" || navigator.platform.startsWith("Mac");
@@ -47,7 +45,6 @@ const diagnosticResults = document.querySelector("#diagnostic-results");
 const review = document.querySelector("#review");
 const reviewTitle = document.querySelector("#review-title");
 const reviewContent = document.querySelector("#review-content");
-const code = document.querySelector("#highlight");
 const validation = document.querySelector("#validation");
 const runState = document.querySelector("#run-state");
 const pauseAll = document.querySelector("#pause-all");
@@ -59,8 +56,6 @@ const moveDown = document.querySelector("#move-down");
 const setupBanner = document.querySelector("#setup-banner");
 const updatesButton = document.querySelector("#updates");
 const updateState = document.querySelector("#update-state");
-const hints = document.querySelector("#hints");
-const completionList = document.querySelector("#completions");
 
 const search = document.querySelector("#search");
 // Status filter chips are radio buttons; this keeps the select-style .value interface the library code reads.
@@ -85,12 +80,6 @@ const setupSites = document.querySelector("#setup-sites");
 const inspect = document.querySelector("#inspect");
 const diagnostics = document.querySelector("#diagnostics");
 
-const findBar = document.querySelector("#find-bar");
-const findInput = document.querySelector("#find-input");
-const replaceInput = document.querySelector("#replace-input");
-const findCase = document.querySelector("#find-case");
-const findCount = document.querySelector("#find-count");
-
 let scripts = [];
 let trash = [];
 let settings = {};
@@ -102,7 +91,6 @@ let loaded;
 let draftBaseline = starter;
 let busy = false;
 let registrationState;
-let currentMatch;
 
 function registrationMessage(id) {
   return registrationState?.error || registrationState?.issues[id] || "";
@@ -125,87 +113,38 @@ function runSummary(id) {
   return { state: "ran", text: `Ran ${timeAgo(run.at)}` };
 }
 
-let lineCount = 0;
-
-function syncGutter() {
-  code.style.transform = `translate(-${source.scrollLeft}px, -${source.scrollTop}px)`;
-  lineNumbers.style.transform = `translateY(-${source.scrollTop}px)`;
-}
-
-function findMarks() {
-  if (findBar.hidden) return [];
-  const length = findInput.value.length;
-  const marks = findMatches(source.value, findInput.value, findCase.checked).slice(0, 500)
-    .filter(start => start !== currentMatch?.start)
-    .map(start => ({ start, end: start + length, kind: "find-match" }));
-  return currentMatch ? [...marks, { ...currentMatch, kind: "find-current" }] : marks;
-}
-
-function refreshHighlight() {
-  const caret = source.selectionStart === source.selectionEnd && document.activeElement === source ? source.selectionStart : -1;
-  highlight(source.value, code, { caret, marks: findMarks() });
-}
-
-function updateEditor() {
-  const lines = source.value.split("\n").length;
-  if (lines !== lineCount) {
-    lineCount = lines;
-    lineNumbers.textContent = Array.from({ length: lines }, (_, index) => index + 1).join("\n");
-  }
-  const beforeCaret = source.value.slice(0, source.selectionDirection === "backward"
-    ? source.selectionStart : source.selectionEnd);
-  const line = beforeCaret.split("\n").length;
-  const column = beforeCaret.length - beforeCaret.lastIndexOf("\n");
-  cursorPosition.textContent = `Ln ${line}, Col ${column}`;
-  syncGutter();
-}
-
 let validationTimer;
 function refreshSource() {
-  updateEditor();
   updateDraftState();
-  if (currentMatch && source.value.slice(currentMatch.start, currentMatch.end) !== findInput.value) currentMatch = undefined;
-  refreshHighlight();
-  if (!findBar.hidden) updateFindCount();
   clearTimeout(validationTimer);
-  validationTimer = setTimeout(() => {
-    updateTargetsSummary();
-    try {
-      validate(source.value);
-      validation.textContent = "";
-    } catch (error) {
-      validation.textContent = error.message;
-    }
-    renderHints();
-  }, 250);
+  validationTimer = setTimeout(updateTargetsSummary, 250);
 }
 
-function scrollToOffset(offset) {
-  const lineHeight = parseFloat(getComputedStyle(source).lineHeight);
-  const line = source.value.slice(0, offset).split("\n").length - 1;
-  if (line * lineHeight < source.scrollTop || (line + 1) * lineHeight > source.scrollTop + source.clientHeight - 24) {
-    source.scrollTop = Math.max(0, (line - 4) * lineHeight);
-  }
+// The status bar shows the first error, or how many other problems the editor marked.
+function renderProblems(found) {
+  const errors = found.filter(item => item.severity === "error");
+  const warnings = found.filter(item => item.severity === "warning").length;
+  validation.dataset.state = errors.length ? "error" : warnings ? "warning" : "";
+  validation.textContent = errors.length ? errors[0].message + (errors.length > 1 ? ` (+${errors.length - 1} more)` : "")
+    : warnings ? `${warnings} warning${warnings === 1 ? "" : "s"}` : "";
+  validation.title = found.length ? "Show all problems" : "";
 }
 
-function goToLine(line) {
-  const lines = source.value.split("\n");
-  const start = lines.slice(0, line - 1).reduce((total, text) => total + text.length + 1, 0);
-  source.focus();
-  source.setSelectionRange(start, start + (lines[line - 1]?.length ?? 0));
-  scrollToOffset(start);
-}
+const source = createCodeEditor(document.querySelector("#editor"), {
+  onChange: refreshSource,
+  onCursor: ({ line, column }) => {
+    cursorPosition.textContent = `Ln ${line}, Col ${column}`;
+  },
+  onDiagnostics: renderProblems
+});
+validation.addEventListener("click", () => source.openProblems());
 
 function select(script, preserveCaret = false, template = starter) {
   selectedId = script?.id;
   loaded = script;
   if (!preserveCaret) {
     draftBaseline = script?.source ?? template;
-    source.value = draftBaseline;
-    source.setSelectionRange(0, 0);
-    source.scrollTop = 0;
-    source.scrollLeft = 0;
-    currentMatch = undefined;
+    source.load(draftBaseline);
   }
   enabled.checked = script?.enabled ?? false;
   title.textContent = script?.name ?? "New script";
@@ -238,6 +177,7 @@ function renderEditorDetails() {
   scriptState.textContent = status.pill;
   scriptState.dataset.state = status.state;
   runState.replaceChildren();
+  source.setRunError(script && runs[script.id]?.error);
   const summary = script && runSummary(script.id);
   if (!summary) return;
   runState.dataset.state = summary.state;
@@ -245,7 +185,7 @@ function renderEditorDetails() {
   runState.append(error ? `Last run failed${error.line ? ` on line ${error.line}` : ""}: ${error.message} · ${timeAgo(error.at)}` : summary.text,
     ...(url && summary.state !== "error" ? [` on ${url.replace(/^https?:\/\//, "")}`] : []));
   const line = runs[script.id].error?.line;
-  if (line) runState.append(" ", makeButton(`Go to line ${line}`, () => goToLine(line)));
+  if (line) runState.append(" ", makeButton(`Go to line ${line}`, () => source.goToLine(line)));
 }
 
 function renderDiagnostics() {
@@ -544,10 +484,8 @@ applySetup.addEventListener("click", () => {
     const patterns = setupSites.value.split("\n").map(line => line.trim()).filter(Boolean);
     const next = updateTargets(source.value, setupName.value, patterns);
     parseSource(next + "\n;");
-    source.value = next;
-    source.setSelectionRange(next.length, next.length);
+    source.replace(next);
     setup.open = false;
-    refreshSource();
     status.textContent = "Site settings applied to the draft. Save to use them.";
     source.focus();
   } catch (error) {
@@ -565,25 +503,6 @@ inspect.addEventListener("click", () => {
   if (!diagnostics.hidden) diagnosticUrl.focus();
 });
 
-source.addEventListener("input", event => {
-  refreshSource();
-  if (event.inputType?.startsWith("insert")) showCompletions();
-  else closeCompletions();
-});
-source.addEventListener("selectionchange", () => {
-  updateEditor();
-  refreshHighlight();
-});
-source.addEventListener("blur", () => {
-  refreshHighlight();
-  closeCompletions();
-});
-source.addEventListener("mousedown", closeCompletions);
-source.addEventListener("scroll", () => {
-  syncGutter();
-  if (!completionList.hidden) positionCompletions();
-});
-
 function primary(event) {
   return isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
 }
@@ -594,136 +513,10 @@ document.addEventListener("keydown", event => {
   if (key === "s") {
     event.preventDefault();
     if (!busy && !event.repeat) form.requestSubmit(saveButton);
-  } else if (key === "f" && form.contains(document.activeElement)) {
+  } else if (key === "f" && form.contains(document.activeElement) && !event.defaultPrevented) {
     event.preventDefault();
-    openFind();
+    source.openSearch();
   }
-});
-
-function applyEdit({ from, to, text, selectionStart, selectionEnd }) {
-  source.focus();
-  source.setSelectionRange(from, to);
-  // execCommand keeps the edit on the textarea's native undo stack.
-  document.execCommand("insertText", false, text);
-  source.setSelectionRange(selectionStart, selectionEnd);
-}
-
-source.addEventListener("keydown", event => {
-  if (event.isComposing) return;
-  if (!completionList.hidden) {
-    const count = completion.items.length;
-    const moves = { ArrowDown: 1, ArrowUp: count - 1 };
-    if (moves[event.key]) {
-      event.preventDefault();
-      activeCompletion = (activeCompletion + moves[event.key]) % count;
-      highlightCompletion();
-      return;
-    }
-    if ((event.key === "Enter" || event.key === "Tab") && !event.shiftKey) {
-      event.preventDefault();
-      acceptCompletion();
-      return;
-    }
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      closeCompletions();
-      return;
-    }
-  }
-  if (event.ctrlKey && !event.metaKey && event.key === " ") {
-    event.preventDefault();
-    showCompletions(true);
-    return;
-  }
-  if (event.altKey || event.shiftKey) return;
-  const lineCommands = { "]": "indent", "[": "outdent", "/": "comment" };
-  if (primary(event) && lineCommands[event.key]) {
-    event.preventDefault();
-    applyEdit(editLines(source.value, source.selectionStart, source.selectionEnd, lineCommands[event.key]));
-  } else if (!event.ctrlKey && !event.metaKey && event.key === "Enter") {
-    const beforeCaret = source.value.slice(0, source.selectionStart);
-    const line = beforeCaret.slice(beforeCaret.lastIndexOf("\n") + 1);
-    const indent = line.match(/^[ \t]*/)[0];
-    if (!indent && !line.trimEnd().endsWith("{")) return;
-    event.preventDefault();
-    document.execCommand("insertText", false, "\n" + indent + (line.trimEnd().endsWith("{") ? "  " : ""));
-  }
-});
-
-function updateFindCount() {
-  const matches = findMatches(source.value, findInput.value, findCase.checked);
-  const position = currentMatch ? matches.indexOf(currentMatch.start) + 1 : 0;
-  findCount.textContent = !findInput.value ? "" : !matches.length ? "No matches"
-    : position ? `${position} of ${matches.length}` : `${matches.length} matches`;
-}
-
-function findStep(direction, from = source.selectionStart) {
-  const matches = findMatches(source.value, findInput.value, findCase.checked);
-  let start;
-  if (direction > 0) start = matches.find(index => index >= from) ?? matches[0];
-  else start = matches.findLast(index => index < from) ?? matches.at(-1);
-  currentMatch = start === undefined ? undefined : { start, end: start + findInput.value.length };
-  if (currentMatch) {
-    source.setSelectionRange(currentMatch.start, currentMatch.end);
-    scrollToOffset(currentMatch.start);
-  }
-  refreshHighlight();
-  updateFindCount();
-}
-
-function openFind() {
-  findBar.hidden = false;
-  const selected = source.value.slice(source.selectionStart, source.selectionEnd);
-  if (selected && !selected.includes("\n")) findInput.value = selected;
-  findInput.focus();
-  findInput.select();
-  findStep(1, source.selectionStart);
-}
-
-function closeFind() {
-  findBar.hidden = true;
-  currentMatch = undefined;
-  refreshHighlight();
-  source.focus();
-}
-
-findInput.addEventListener("input", () => findStep(1, currentMatch?.start ?? source.selectionStart));
-findCase.addEventListener("change", () => findStep(1, currentMatch?.start ?? 0));
-document.querySelector("#find-next").addEventListener("click", () => findStep(1, (currentMatch?.start ?? -1) + 1));
-document.querySelector("#find-previous").addEventListener("click", () => findStep(-1, currentMatch?.start ?? source.selectionStart));
-document.querySelector("#find-close").addEventListener("click", closeFind);
-for (const input of [findInput, replaceInput]) {
-  input.addEventListener("keydown", event => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      closeFind();
-    } else if (event.key === "Enter" && !event.isComposing) {
-      event.preventDefault();
-      if (input === replaceInput) document.querySelector("#replace-one").click();
-      else findStep(event.shiftKey ? -1 : 1, event.shiftKey ? currentMatch?.start ?? 0 : (currentMatch?.start ?? -1) + 1);
-    }
-  });
-}
-document.querySelector("#replace-one").addEventListener("click", () => {
-  if (!currentMatch) return findStep(1);
-  const { start, end } = currentMatch;
-  applyEdit({ from: start, to: end, text: replaceInput.value, selectionStart: start, selectionEnd: start + replaceInput.value.length });
-  findStep(1, start + replaceInput.value.length);
-  replaceInput.focus();
-});
-document.querySelector("#replace-all").addEventListener("click", () => {
-  const matches = findMatches(source.value, findInput.value, findCase.checked);
-  if (!matches.length) return;
-  let next = source.value;
-  for (const start of matches.toReversed()) next = next.slice(0, start) + replaceInput.value + next.slice(start + findInput.value.length);
-  const { scrollTop } = source;
-  applyEdit({ from: 0, to: source.value.length, text: next, selectionStart: 0, selectionEnd: 0 });
-  source.scrollTop = scrollTop;
-  currentMatch = undefined;
-  refreshSource();
-  findCount.textContent = `Replaced ${matches.length}`;
-  replaceInput.focus();
 });
 
 function openReview(heading, ...content) {
@@ -954,10 +747,7 @@ function showHistory() {
       }
     }), makeButton("Load into editor", () => {
       if (!canLeave()) return;
-      source.value = version.source;
-      source.setSelectionRange(0, 0);
-      source.scrollTop = source.scrollLeft = 0;
-      refreshSource();
+      source.replace(version.source);
       review.close();
       source.focus();
       status.textContent = "Version loaded. Save to restore it.";
@@ -1119,101 +909,6 @@ async function showBackup() {
 }
 backupButton.addEventListener("click", showBackup);
 
-
-let completion;
-let activeCompletion = 0;
-let charWidth;
-
-function closeCompletions() {
-  completion = undefined;
-  completionList.hidden = true;
-  source.removeAttribute("aria-activedescendant");
-}
-
-function showCompletions(explicit = false) {
-  completion = source.selectionStart === source.selectionEnd && completions(source.value, source.selectionStart, explicit);
-  if (!completion) {
-    closeCompletions();
-    return;
-  }
-  activeCompletion = 0;
-  completionList.replaceChildren(...completion.items.map((item, index) => {
-    const option = element("li");
-    option.id = `completion-${index}`;
-    option.setAttribute("role", "option");
-    option.append(element("span", item.label, "completion-label"));
-    if (item.detail) option.append(element("span", item.detail, "completion-detail"));
-    option.addEventListener("mousedown", event => {
-      event.preventDefault();
-      acceptCompletion(index);
-    });
-    return option;
-  }));
-  completionList.hidden = false;
-  positionCompletions();
-  highlightCompletion();
-}
-
-// The editor is monospaced, so the caret's position follows from its line and visual column.
-function positionCompletions() {
-  if (!charWidth) {
-    const probe = element("span", "x".repeat(100));
-    probe.style.cssText = `position:absolute;visibility:hidden;white-space:pre;font:${getComputedStyle(source).font}`;
-    document.body.append(probe);
-    charWidth = probe.getBoundingClientRect().width / 100;
-    probe.remove();
-  }
-  const style = getComputedStyle(source);
-  const before = source.value.slice(0, completion.from);
-  const line = before.split("\n").length - 1;
-  let column = 0;
-  for (const char of before.slice(before.lastIndexOf("\n") + 1)) column = char === "\t" ? column + 2 - (column % 2) : column + 1;
-  completionList.style.top = `${parseFloat(style.paddingTop) + (line + 1) * parseFloat(style.lineHeight) - source.scrollTop}px`;
-  completionList.style.left = `${source.offsetLeft + parseFloat(style.paddingLeft) + column * charWidth - source.scrollLeft}px`;
-}
-
-function highlightCompletion() {
-  for (const [index, option] of [...completionList.children].entries()) {
-    option.setAttribute("aria-selected", String(index === activeCompletion));
-    if (index === activeCompletion) option.scrollIntoView({ block: "nearest" });
-  }
-  source.setAttribute("aria-activedescendant", `completion-${activeCompletion}`);
-}
-
-function acceptCompletion(index = activeCompletion) {
-  const { from, to, items } = completion;
-  const text = items[index].insert ?? items[index].label;
-  closeCompletions();
-  applyEdit({ from, to, text, selectionStart: from + text.length, selectionEnd: from + text.length });
-}
-
-function renderHints() {
-  hints.replaceChildren();
-  let metadata;
-  try {
-    metadata = parseSource(source.value);
-  } catch {
-    return;
-  }
-  const missing = missingGrants(source.value);
-  if (missing.length) {
-    const hint = element("p", `This script uses ${missing.join(", ")} without a matching @grant line, so ${missing.length === 1 ? "it" : "they"} won’t be defined.`, "hint");
-    hint.append(makeButton(missing.length === 1 ? `Add @grant ${missing[0]}` : "Add the @grant lines", () => {
-      const before = source.value;
-      const next = addGrants(before, missing);
-      const caret = source.selectionStart;
-      const shift = caret > before.indexOf("==/UserScript==") ? next.length - before.length : 0;
-      const { scrollTop } = source;
-      applyEdit({ from: 0, to: before.length, text: next, selectionStart: caret + shift, selectionEnd: caret + shift });
-      source.scrollTop = scrollTop;
-      refreshSource();
-    }));
-    hints.append(hint);
-  }
-  if (metadata.unsupportedGrants.length) {
-    hints.append(element("p", `Tailorscript doesn’t provide ${metadata.unsupportedGrants.join(", ")}, so calls to ${metadata.unsupportedGrants.length === 1 ? "it" : "them"} will fail.`, "hint warning"));
-  }
-}
 
 function renderUpdateState(script) {
   updateState.replaceChildren();

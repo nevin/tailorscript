@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { addMetadata, compareVersions, connectOrigins, matchesUrl, originsFor, parseSource, runsOn, updateTargets } from "../src/shared/userscript.js";
+import { addMetadata, compareVersions, connectOrigins, insecureSources, matchesUrl, originsFor, parseSource, runsOn, updateTargets } from "../src/shared/userscript.js";
 import { validate } from "../src/shared/validate.js";
 import { userscript } from "./helpers/chrome.mjs";
 
@@ -115,4 +115,11 @@ test("updateTargets and addMetadata keep the rest of the script", () => {
   const excluded = addMetadata(addMetadata(userscript(), "exclude-match", "*://x.com/*"), "match", "https://b.com/*");
   assert.deepEqual(parseSource(excluded).excludeMatches, ["*://x.com/*"]);
   assert.match(excluded, /@match {7}https:\/\/a\.com\/\*\n\/\/ @match {7}https:\/\/b\.com\/\*\n/);
+});
+
+test("insecureSources lists code fetched over plain http", () => {
+  const metadata = parseSource(header(["@match https://a.com/*", "@require http://cdn.x/lib.js", "@require https://cdn.x/ok.js",
+    "@resource css http://cdn.x/a.css", "@updateURL https://x.org/s.meta.js"]));
+  assert.deepEqual(insecureSources(metadata, "http://x.org/s.user.js"), ["http://x.org/s.user.js", "http://cdn.x/lib.js", "http://cdn.x/a.css"]);
+  assert.deepEqual(insecureSources(parseSource(header(["@match https://a.com/*"]))), []);
 });

@@ -13,12 +13,21 @@ All notable changes to Tailorscript are recorded here. Versions follow [Semantic
 - Popup: toolbar badge with run count and errors, Run now, Don't run on this site, script menu commands, Find scripts for this site, and installing the open `.user.js` file.
 - Setup check that explains how to turn on Allow User Scripts when Chrome blocks userscripts.
 - Keyboard shortcut to pause or resume all scripts.
-- Editor autocomplete for metadata, grants and GM APIs, and a one-click fix for missing `@grant` lines.
+- CodeMirror-based editor with completions for metadata, GM APIs, local variables, browser APIs and userscript snippets; inline problems with quick fixes (missing `@grant` or `@connect`, unused or unsupported grants, unknown metadata, the last run's error); hover docs; parameter hints; folding, multiple cursors and regex find and replace.
+- `npm run vendor` to rebuild the vendored CodeMirror bundle.
 
 - Build, check, package and Chrome Web Store submission scripts, CI and release workflows.
 - ESLint configuration and a `node:test` suite covering parsing, registration, the service worker, sync backup, packaging and submission.
 
 - "New script for this site" in the popup opens the template picker with the current site filled in.
+
+### Security
+- The install page refuses to run inside a frame, so other sites can't disguise its Install button, and new installs start turned off unless you choose otherwise.
+- Updates downloaded over plain http, or that load http code, always wait for review. The install page and editor flag http downloads, and the editor offers a "Use https" fix.
+- `GM_xmlhttpRequest` checks `@connect` against the final address after redirects.
+- Installing a script from a different address that reuses an installed script's name and namespace now shows a warning, because it would inherit that script's stored data.
+- Scripts are identified only by the world ID Chrome assigns; `@resource` data URLs keep only a plain media type.
+- CI and release workflows run with read-only repository access and actions pinned to exact commits.
 
 ### Changed
 - Unsupported `@grant` values are now a warning instead of an error.

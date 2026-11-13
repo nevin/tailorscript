@@ -38,7 +38,9 @@ export async function resolveDeps(metadata, previous = {}) {
     let dataUrl = previous.resources?.find(item => item.url === url)?.dataUrl ?? (url.startsWith("data:") ? url : null);
     if (!dataUrl) {
       const { bytes, contentType } = await download(url);
-      dataUrl = `data:${contentType.split(";")[0] || "application/octet-stream"};base64,${toBase64(bytes)}`;
+      // The server's Content-Type goes into the URL, so keep only a plain type/subtype.
+      const type = contentType.split(";")[0].trim().toLowerCase();
+      dataUrl = `data:${/^[a-z\d.+-]+\/[a-z\d.+-]+$/.test(type) ? type : "application/octet-stream"};base64,${toBase64(bytes)}`;
     }
     total += dataUrl.length;
     resources.push({ name, url, dataUrl });

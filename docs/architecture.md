@@ -1,6 +1,6 @@
 # Architecture
 
-Tailorscript is plain JavaScript modules with no bundler. `src/` is the extension exactly as Chrome loads it; the build only copies it and stamps the version.
+Tailorscript is plain JavaScript modules with no bundler. `src/` is the extension exactly as Chrome loads it; the build only copies it and stamps the version. Third-party code is vendored under `src/vendor/`: acorn as published, and CodeMirror as one ES module bundle that `npm run vendor` builds with esbuild from `scripts/vendor/codemirror-entry.mjs`.
 
 ## Pieces
 
@@ -11,7 +11,7 @@ Tailorscript is plain JavaScript modules with no bundler. `src/` is the extensio
 | Runtime | `background/userscript-runtime.js` | A self-contained function serialized into each script's world before its code. It reports runs and errors and defines only the GM APIs the script grants. |
 | Dependencies and updates | `background/dependencies.js`, `background/updates.js` | Download `@require` and `@resource` files (reusing ones already fetched for the same URL), check update URLs, and decide whether an update can apply without review. |
 | Install page | `install/` | Opened for `.user.js` links. Downloads and validates the script, shows what it can do and how it differs from an installed copy, requests site access and asks the worker to install it. |
-| Manager | `manager/` | The full-page editor and library. `manager.js` holds page state and wiring; `editor.js`, `diff.js`, `backup-file.js` and `templates.js` are side-effect-free helpers. |
+| Manager | `manager/` | The full-page editor and library. `manager.js` holds page state and wiring. `code-editor.js` sets up CodeMirror and adapts `intellisense.js` (completions, problems and quick fixes, hover docs and parameter hints, all computed from plain text so they're testable in Node) with the API reference in `gm-api.js`. `editor.js` (static highlighting for the install page), `diff.js`, `backup-file.js` and `templates.js` are side-effect-free helpers. |
 | Popup | `popup/` | Shows scripts matching the active tab, their last run or error, menu commands, Run now and quick toggles. |
 | Shared | `shared/` | Metadata parsing, match, glob and regex rules, grant families and version comparison (`userscript.js`), install helpers (`install.js`), syntax validation (`validate.js`), storage reads, Chrome sync backup and time formatting. |
 

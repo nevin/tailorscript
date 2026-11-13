@@ -320,7 +320,8 @@ async function checkUpdates(ids, { manual = false } = {}) {
       result.found = await fetchUpdate(script);
       if (result.found?.source) {
         const edited = Boolean(script.installedHash) && script.installedHash !== await sourceHash(script.source);
-        result.reasons = reviewReasons(parseSource(script.source), result.found.metadata, { edited, autoUpdate: script.autoUpdate });
+        result.reasons = reviewReasons(parseSource(script.source), result.found.metadata,
+          { edited, autoUpdate: script.autoUpdate, urls: result.found.urls });
         if (!result.reasons.length) {
           try {
             result.deps = await resolveDeps(result.found.metadata, await storedDeps(script.id));
@@ -554,6 +555,11 @@ async function handleXhr(id, { requestId, request }, sender) {
   const timer = request.timeout > 0 ? setTimeout(() => controller.abort(new Error(`Timed out after ${request.timeout} ms.`)), request.timeout) : 0;
   try {
     const response = await fetch(url, { method, headers, body, signal: controller.signal, credentials: request.anonymous ? "omit" : "include" });
+    // A redirect can lead anywhere, so the final address must also be one the script may reach.
+    const final = new URL(response.url || url);
+    if (!connectAllowed(metadata.connects, final, sender.url)) {
+      throw new Error(`The request was redirected to ${final.hostname}. Add // @connect ${final.hostname} to allow it.`);
+    }
     const bytes = new Uint8Array(await response.arrayBuffer());
     if (bytes.length > responseBytes) throw new Error("The response is larger than 32 MB.");
     return {
@@ -566,6 +572,7 @@ async function handleXhr(id, { requestId, request }, sender) {
     };
   } catch (error) {
     if (controller.signal.aborted) throw controller.signal.reason instanceof Error ? controller.signal.reason : new Error("Aborted.");
+    if (error.message.startsWith("The request was redirected")) throw error;
     throw new Error(`Request to ${url.host} failed: ${error.message}`, { cause: error });
   } finally {
     clearTimeout(timer);
@@ -643,7 +650,8 @@ const scriptHandlers = {
 
 // Chrome only exposes this event while Allow User Scripts is on.
 chrome.runtime.onUserScriptMessage?.addListener((message, sender, respond) => {
-  const id = sender.userScriptWorldId ?? message?.id;
+  // Chrome sets the world ID, so a script can't claim to be another one.
+  const id = sender.userScriptWorldId;
   if (typeof id !== "string") return false;
   if (message?.type === "run" || message?.type === "error") {
     recordRun(id, message, sender);

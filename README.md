@@ -30,6 +30,7 @@ src/                 The extension, loadable as-is
   shared/            Metadata parsing, validation, storage and sync backup used by every page
   icons/             Logo sources (SVG) and the PNG sizes Chrome needs
   vendor/acorn/      Vendored JavaScript parser (MIT)
+  vendor/codemirror/ Vendored CodeMirror 6 editor bundle (MIT), rebuilt with npm run vendor
 scripts/             Build, check, package and Web Store submission tools (Node built-ins only)
 tests/               node:test suites with an in-memory Chrome API mock
 docs/                Architecture, publishing guide, store listing and privacy policy
@@ -43,6 +44,7 @@ See [docs/architecture.md](docs/architecture.md) for how the pieces talk to each
 | --- | --- |
 | `npm run build` | Copies `src/` into a clean `dist/`, stamps the `package.json` version and validates the result. |
 | `npm run check` | Validates `src/`: manifest rules, icon sizes, version match, missing files and remote code. |
+| `npm run vendor` | Rebuilds `src/vendor/codemirror/` from the CodeMirror packages in `devDependencies`. Run it after updating them, and commit the result. |
 | `npm run lint` | Runs ESLint. |
 | `npm test` | Runs the unit and integration tests. |
 | `npm run verify` | Lint, tests and check together, as CI runs them. |
@@ -67,7 +69,9 @@ If Chrome's **Allow User Scripts** switch is off, the popup and manager say so a
 
 Open a `.user.js` link, or use **Install from URL…** in the manager's menu. Tailorscript shows an install page with the script's sites, the APIs it can use, any code it loads, and the code itself. For a script you already have, it shows the changes. Turn on **One-click installs** under **Settings & backup** to open `.user.js` links on Greasy Fork, OpenUserJS and GitHub directly in the install page.
 
-Installed scripts check `@updateURL` (or `@downloadURL`, or the address they came from) every 12 hours. An update installs on its own only when it needs no new site access, APIs or libraries, and you haven't edited the script since installing it. Otherwise the script shows **Update available**, and you review the changes before applying or skipping them. **Updates…** in the script menu shows where a script came from, lets you check now, and turns automatic updates off. **Check for updates** checks every installed script.
+New installs start turned off unless you tick **Turn it on after installing**. The install page won't run inside another site's frame, and it warns when a script or its libraries come over plain http or when a script would replace a different one with the same name.
+
+Installed scripts check `@updateURL` (or `@downloadURL`, or the address they came from) every 12 hours. An update installs on its own only when it came over https, needs no new site access, APIs or libraries, and you haven't edited the script since installing it. Otherwise the script shows **Update available**, and you review the changes before applying or skipping them. **Updates…** in the script menu shows where a script came from, lets you check now, and turns automatic updates off. **Check for updates** checks every installed script.
 
 ## Write a script
 
@@ -103,7 +107,14 @@ APIs, each available in the classic `GM_` form and the promise-based `GM.` form:
 | `GM_getResourceText`, `GM_getResourceURL` / `GM.getResourceUrl` | Read `@resource` files. |
 | `unsafeWindow` | The window object. Scripts run in an isolated world, so use `@inject-into page` to reach the page's own variables. |
 
-The editor highlights JavaScript, matching brackets, and syntax errors. It suggests metadata keys, `@grant` values and GM APIs as you type (Ctrl+Space to ask), and offers to add missing `@grant` lines when the code calls an API it hasn't granted. Shortcuts: ⌘/Ctrl+S save, ⌘/Ctrl+F find and replace, ⌘/Ctrl+] and ⌘/Ctrl+[ indent and outdent lines, ⌘/Ctrl+/ toggle comments.
+The editor is built on CodeMirror and understands userscripts:
+
+- **Completions** as you type, or with Ctrl+Space: metadata keys and values in the header, GM APIs with their parameters and the `@grant` they need, variables and functions in your script, browser APIs such as `document.querySelector`, and snippets for common userscript patterns (`waitFor`, `observe`, `menuCommand`, `request` and more).
+- **Problems** underlined as you type, with a marker in the gutter: syntax errors, invalid metadata, unknown metadata keys, GM APIs used without their `@grant`, unsupported or unused grants, `GM_xmlhttpRequest` URLs whose host isn't in `@connect`, and the line where the last run failed. Most come with a one-click fix such as **Add @grant** or **Add @connect**. Click the problem count in the status bar, or press F8, to step through them.
+- **Hover docs** for metadata keys, grants and GM APIs, and **parameter hints** while you type a GM call.
+- Bracket matching and auto-closing, code folding, multiple cursors (Alt+click, or Alt+drag for a column), and find and replace with regular expressions.
+
+Shortcuts: ⌘/Ctrl+S save, ⌘/Ctrl+F find and replace, ⌘/Ctrl+/ toggle comments, ⌘/Ctrl+] and ⌘/Ctrl+[ indent and outdent, Tab to indent (press Escape first to move focus out of the editor with Tab).
 
 Changes take effect on the next matching page load. Turn on **Reload matching tabs after saving** to reload them for you.
 

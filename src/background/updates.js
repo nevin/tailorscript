@@ -1,4 +1,4 @@
-import { compareVersions, parseSource } from "../shared/userscript.js";
+import { compareVersions, insecureSources, parseSource } from "../shared/userscript.js";
 import { validate } from "../shared/validate.js";
 import { downloadText } from "./dependencies.js";
 
@@ -25,12 +25,15 @@ export async function fetchUpdate(script) {
   const source = urls.download === urls.check ? header : await downloadText(urls.download);
   const next = validate(source);
   if (compareVersions(next.version, metadata.version) <= 0) return { version: next.version };
-  return { version: next.version, source, metadata: next };
+  return { version: next.version, source, metadata: next, urls };
 }
 
 // Updates apply on their own only when they need nothing new from the user.
-export function reviewReasons(current, next, { edited, autoUpdate }) {
+export function reviewReasons(current, next, { edited, autoUpdate, urls = {} }) {
   const reasons = [];
+  // Code fetched over plain http could have been swapped on the way, so it never installs unattended.
+  const insecure = [...new Set([urls.check, urls.download, ...insecureSources(next)].filter(url => /^http:\/\//i.test(url ?? "")))];
+  if (insecure.length) reasons.push(`It was downloaded over unencrypted http (${insecure.join(", ")}), so it could have been changed on the way.`);
   if (autoUpdate === false) reasons.push("Automatic updates are off for this script.");
   if (edited) reasons.push("You edited this script after installing it, and updating replaces your changes.");
   const origins = next.origins.filter(origin => !current.origins.includes(origin));

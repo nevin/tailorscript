@@ -2,8 +2,14 @@ import { diffView } from "../manager/diff.js";
 import { highlight } from "../manager/editor.js";
 import { describeGrants } from "../shared/install.js";
 import { readScripts } from "../shared/storage.js";
-import { compareVersions, grantFamilies, parseSource } from "../shared/userscript.js";
+import { compareVersions, grantFamilies, insecureSources, parseSource } from "../shared/userscript.js";
 import { validate } from "../shared/validate.js";
+
+// Websites can open this page, so it refuses to run in a frame, where a disguised click could install a script.
+if (window.top !== window) {
+  document.body.replaceChildren();
+  throw new Error("The Tailorscript install page can’t be shown inside another page.");
+}
 
 const url = location.hash.slice(1);
 const $ = selector => document.querySelector(selector);
@@ -70,6 +76,10 @@ function renderDetails() {
   unsupported.hidden = !metadata.unsupportedGrants.length;
   unsupported.textContent = `Tailorscript doesn’t provide ${metadata.unsupportedGrants.join(", ")}, so parts of this script may not work.`;
   highlight(source, $("#source"));
+  const insecure = insecureSources(metadata, url);
+  $("#insecure").hidden = !insecure.length;
+  $("#insecure").textContent = `This script ${insecure.includes(url) ? "is" : "loads code that is"} downloaded over unencrypted http (${insecure.join(", ")}), `
+    + "so someone on your network could change it. Install it only on a network you trust, and updates will wait for your review.";
 
   const notice = $("#existing");
   notice.hidden = !existing;
@@ -77,11 +87,16 @@ function renderDetails() {
   if (existing) {
     const installed = metadataOf(existing)?.version;
     const order = compareVersions(metadata.version, installed);
+    // A script from another address that reuses the name would inherit the installed script's saved data.
+    const lookalike = existing.installUrl !== url && existing.source !== source;
+    notice.classList.toggle("warning", lookalike);
     notice.textContent = existing.source === source ? `“${existing.name}” is already installed with this exact code.`
+      : lookalike ? `You already have a script named “${existing.name}”, ${existing.installUrl ? `installed from ${existing.installUrl}` : "written in Tailorscript"}. `
+        + "This one comes from a different address. Installing replaces yours, and the new code can read everything yours saved. Continue only if you trust this source."
       : order < 0 ? `This is older than the installed version${installed ? ` (v${installed})` : ""}. Installing it downgrades “${existing.name}”.`
       : `You have “${existing.name}”${installed ? ` v${installed}` : ""} installed. Installing replaces it and keeps its stored data.`;
     $("#changes").replaceChildren(element("p", "Changes from your installed copy:", "muted"), diffView(existing.source, source));
-    installButton.textContent = existing.source === source ? "Reinstall" : order < 0 ? "Downgrade" : "Update";
+    installButton.textContent = existing.source === source ? "Reinstall" : lookalike ? "Replace" : order < 0 ? "Downgrade" : "Update";
     $("#enable").checked = existing.enabled;
     $("#auto-update").checked = existing.autoUpdate !== false;
   }
