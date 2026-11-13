@@ -1,3 +1,4 @@
+import { addMetadata, allows, grantFamilies, parseSource, supportedGrants, syncValueGrants } from "../shared/userscript.js";
 import { tokenizer } from "../vendor/acorn/acorn.mjs";
 
 const openers = ["(", "[", "{", "${"];
@@ -95,4 +96,90 @@ export function findMatches(source, query, caseSensitive) {
     matches.push(index);
   }
   return matches;
+}
+
+const metadataKeys = [
+  ["name", "Script name"], ["namespace", "Author or project, keeps names unique"], ["version", "Used to detect updates"],
+  ["description", "What the script does"], ["author", "Who wrote it"], ["match", "Pages to run on, e.g. https://example.com/*"],
+  ["include", "Glob or /regex/ of pages to run on"], ["exclude-match", "Pages to skip, as a match pattern"],
+  ["exclude", "Glob or /regex/ of pages to skip"], ["grant", "An API the script uses"], ["connect", "A site GM_xmlhttpRequest may reach"],
+  ["require", "Library URL loaded before the script"], ["resource", "name https://url of a bundled file"],
+  ["run-at", "When to run: document-start, document-end, document-idle"], ["all-frames", "Also run inside frames"],
+  ["noframes", "Only run in the top page"], ["inject-into", "page, to share the page’s variables"], ["updateURL", "Where to check for updates"],
+  ["downloadURL", "Where to download updates"], ["homepageURL", "Project page"], ["tag", "Labels for filtering the library"]
+];
+const keywordValues = {
+  grant: supportedGrants.map(label => ({ label })),
+  "run-at": ["document-start", "document-end", "document-idle", "context-menu"].map(label => ({ label })),
+  "inject-into": ["content", "page"].map(label => ({ label }))
+};
+const signatures = {
+  GM_addStyle: "(css)", "GM.addStyle": "(css) → Promise", GM_getValue: "(key, fallback)", "GM.getValue": "(key, fallback) → Promise",
+  GM_setValue: "(key, value)", "GM.setValue": "(key, value) → Promise", GM_deleteValue: "(key)", "GM.deleteValue": "(key) → Promise",
+  GM_listValues: "()", "GM.listValues": "() → Promise", GM_xmlhttpRequest: "({ method, url, onload })",
+  "GM.xmlHttpRequest": "({ method, url }) → Promise", GM_registerMenuCommand: "(caption, onClick)",
+  "GM.registerMenuCommand": "(caption, onClick)", GM_unregisterMenuCommand: "(id)", "GM.unregisterMenuCommand": "(id)",
+  GM_notification: "({ title, text, onclick })", "GM.notification": "({ title, text }) → Promise", GM_setClipboard: "(text)",
+  "GM.setClipboard": "(text) → Promise", GM_openInTab: "(url, { active })", "GM.openInTab": "(url, { active }) → Promise",
+  GM_getResourceText: "(name)", "GM.getResourceText": "(name) → Promise", GM_getResourceURL: "(name)",
+  "GM.getResourceUrl": "(name) → Promise", GM_info: "script details", "GM.info": "script details", unsafeWindow: "the page’s window"
+};
+const apis = Object.entries(signatures).map(([label, detail]) => ({ label, detail }));
+
+function suggest(items, prefix, caret) {
+  const lower = prefix.toLowerCase();
+  const found = items.filter(item => item.label.toLowerCase().startsWith(lower) && item.label !== prefix);
+  return found.length ? { from: caret - prefix.length, to: caret, items: found.slice(0, 12) } : null;
+}
+
+// Suggestions for the word before the caret: metadata keys and values in the header, GM APIs in the code.
+export function completions(source, caret, explicit = false) {
+  const before = source.slice(source.lastIndexOf("\n", caret - 1) + 1, caret);
+  const start = source.search(/^\s*\/\/\s*==UserScript==/m);
+  const end = source.search(/^\s*\/\/\s*==\/UserScript==/m);
+  if (start !== -1 && caret > start && (end === -1 || caret <= end)) {
+    const value = before.match(/^\s*\/\/\s*@([\w-]+)\s+(\S*)$/);
+    if (value) return keywordValues[value[1]] ? suggest(keywordValues[value[1]], value[2], caret) : null;
+    const key = before.match(/^\s*\/\/\s*@([\w-]*)$/);
+    if (!key) return null;
+    return suggest(metadataKeys.map(([label, detail]) => ({ label, detail, insert: `${label.padEnd(11)} ` })), key[1], caret);
+  }
+  const word = before.match(/[A-Za-z_$][\w$]*(?:\.[\w$]*)?$/)?.[0] ?? "";
+  if (!/^(GM|uns)/.test(word) && !(explicit && word)) return null;
+  return suggest(apis, word, caret);
+}
+
+// APIs the code calls without the @grant that turns them on. GM_info is always available.
+export function missingGrants(source) {
+  let metadata;
+  try {
+    metadata = parseSource(source);
+  } catch {
+    return [];
+  }
+  const tokens = [];
+  try {
+    for (const token of tokenizer(source, { ecmaVersion: "latest" })) tokens.push(token);
+  } catch {
+    // Check the code before the first syntax error.
+  }
+  const used = new Set();
+  tokens.forEach((token, index) => {
+    if (token.type.label !== "name" || tokens[index - 1]?.type.label === ".") return;
+    if (/^GM_\w+$/.test(token.value) || token.value === "unsafeWindow") used.add(token.value);
+    if (token.value === "GM" && tokens[index + 1]?.type.label === "." && tokens[index + 2]?.type.label === "name") {
+      used.add(`GM.${tokens[index + 2].value}`);
+    }
+  });
+  return [...used].filter(name => {
+    const family = Object.keys(grantFamilies).find(key => grantFamilies[key].includes(name));
+    if (!family || family === "info" || metadata.grants.includes(name)) return false;
+    return syncValueGrants.includes(name) || !allows(metadata.grants, family);
+  });
+}
+
+export function addGrants(source, grants) {
+  let next = source.replace(/^[ \t]*\/\/[ \t]*@grant[ \t]+none[ \t]*\n/m, "");
+  for (const grant of grants) next = addMetadata(next, "grant", grant);
+  return next;
 }

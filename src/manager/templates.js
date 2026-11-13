@@ -77,5 +77,22 @@ waitFor("main").then(main => {
   await GM.setValue("visits", visits + 1);
   console.log(\`You have opened this site \${visits + 1} times.\`);
 })();`
+  },
+  {
+    name: "Menu command",
+    description: "Add a button to the Tailorscript popup that runs code on this page.",
+    source: header("Menu command", ["// @grant       GM_registerMenuCommand"]) + `
+GM_registerMenuCommand("Highlight links", () => {
+  for (const link of document.links) link.style.background = "yellow";
+});`
+  },
+  {
+    name: "Fetch from another site",
+    description: "Request data from an API with GM.xmlHttpRequest and @connect.",
+    source: header("Fetch data", ["// @grant       GM.xmlHttpRequest", "// @connect     api.github.com"]) + `
+(async () => {
+  const response = await GM.xmlHttpRequest({ url: "https://api.github.com/zen", responseType: "text" });
+  console.log("GitHub says:", response.responseText);
+})();`
   }
 ];

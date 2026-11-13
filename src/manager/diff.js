@@ -40,3 +40,38 @@ export function diffLines(before, after) {
   while (j < m) rows.push({ kind: "added", text: b[start + j++] });
   return rows.concat(a.slice(endA).map(text => ({ kind: "same", text })));
 }
+
+// Changed lines with three lines of context; long unchanged runs collapse into one note.
+export function diffView(before, after) {
+  const rows = diffLines(before, after);
+  const changed = rows.map(row => row.kind !== "same");
+  if (!changed.some(Boolean)) {
+    const same = document.createElement("p");
+    same.textContent = "No changes.";
+    return same;
+  }
+  const output = document.createElement("pre");
+  output.className = "diff";
+  const line = (text, className) => {
+    const span = document.createElement("span");
+    span.textContent = text;
+    span.className = className;
+    output.append(span);
+  };
+  const near = index => changed.slice(Math.max(0, index - 3), index + 4).some(Boolean);
+  let hidden = 0;
+  const flush = () => {
+    if (hidden) line(`… ${hidden} unchanged line${hidden === 1 ? "" : "s"}\n`, "diff-skip");
+    hidden = 0;
+  };
+  rows.forEach((row, index) => {
+    if (!near(index)) {
+      hidden++;
+      return;
+    }
+    flush();
+    line(`${{ same: " ", added: "+", removed: "-" }[row.kind]} ${row.text}\n`, `diff-${row.kind}`);
+  });
+  flush();
+  return output;
+}

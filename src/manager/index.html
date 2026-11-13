@@ -18,6 +18,9 @@
       <details class="menu">
         <summary class="icon-button" aria-label="More actions" title="More actions">⋯</summary>
         <div class="menu-items" role="menu">
+          <button id="install-url" type="button" role="menuitem">Install from URL…</button>
+          <button id="check-updates" type="button" role="menuitem">Check for updates</button>
+          <hr>
           <button id="import" type="button" role="menuitem">Import scripts…</button>
           <button id="export" type="button" role="menuitem">Export backup</button>
           <button id="backup" type="button" role="menuitem">Settings &amp; backup…</button>
@@ -28,6 +31,10 @@
       <input id="import-file" type="file" accept=".js,.json" hidden>
     </div>
   </header>
+  <div id="setup-banner" class="banner" role="alert" hidden>
+    <span><strong>Chrome is blocking userscripts.</strong> Open Tailorscript’s extension details and turn on <strong>Allow User Scripts</strong>, then come back to this tab.</span>
+    <button id="open-extension-settings" type="button">Open extension details</button>
+  </div>
   <p id="paused-banner" class="banner" role="status" hidden>
     <span><strong>All scripts are paused.</strong> They won’t run on new page loads until you resume.</span>
     <button id="resume" type="button">Resume</button>
@@ -83,6 +90,7 @@
             <div class="menu-items" role="menu">
               <button id="history" type="button" role="menuitem" hidden>Version history…</button>
               <button id="values" type="button" role="menuitem" hidden>Stored values…</button>
+              <button id="updates" type="button" role="menuitem" hidden>Updates…</button>
               <div id="order-controls" hidden>
                 <span id="order-label" class="menu-label"></span>
                 <button id="move-up" type="button" role="menuitem">Run earlier</button>
@@ -96,6 +104,7 @@
       </div>
       <div id="targets"></div>
       <div id="run-state"></div>
+      <div id="update-state"></div>
       <details id="setup">
         <summary>Name and sites</summary>
         <div class="setup-fields">
@@ -127,8 +136,10 @@
         <div class="gutter" aria-hidden="true"><pre id="line-numbers"></pre></div>
         <div class="code-layer" aria-hidden="true"><pre id="highlight"></pre></div>
         <textarea id="source" spellcheck="false" autocapitalize="off" autocomplete="off"
-          wrap="off" aria-describedby="editor-help validation" required></textarea>
+          wrap="off" aria-describedby="editor-help validation" aria-autocomplete="list" aria-controls="completions" required></textarea>
+        <ul id="completions" role="listbox" aria-label="Suggestions" hidden></ul>
       </div>
+      <div id="hints"></div>
       <div class="status-bar">
         <p id="validation" aria-live="polite"></p>
         <span id="editor-help"><kbd data-shortcut="S"></kbd> Save <kbd data-shortcut="F"></kbd> Find

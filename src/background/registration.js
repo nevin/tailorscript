@@ -1,37 +1,75 @@
-import { originsFor, parseSource, valueGrants } from "../shared/userscript.js";
+import { allows, grantFamilies, originsFor, parseSource, syncValueGrants } from "../shared/userscript.js";
+import { installRuntime } from "./userscript-runtime.js";
 
-// Runs as its own script in the userscript's world, so the user's directive prologue and line numbers stay intact.
-// Everything stays inside the closure except the granted APIs, which avoids clashing with the user's globals.
-function prelude(id, grants) {
-  const values = valueGrants.filter(grant => grants.includes(grant)).map(grant => ({
-    "GM.getValue": `getValue: async (key, fallback) => { const result = await value("get", key); return result === undefined ? fallback : result; }`,
-    "GM.setValue": `setValue: async (key, data) => { await value("set", key, data); }`,
-    "GM.deleteValue": `deleteValue: async key => { await value("delete", key); }`,
-    "GM.listValues": `listValues: () => value("list")`
-  })[grant]);
-  return `(() => {
-  const send = message => chrome.runtime.sendMessage({ id: ${JSON.stringify(id)}, ...message });
-  const report = message => { try { send(message).catch(() => {}); } catch {} };
-  report({ type: "run" });
-  addEventListener("error", event => report({ type: "error", message: event.message, line: event.lineno, column: event.colno }));
-  addEventListener("unhandledrejection", event => report({ type: "error", message: String(event.reason?.message ?? event.reason) }));
-${grants.includes("GM_addStyle") ? `  globalThis.GM_addStyle = css => {
-    const style = document.createElement("style");
-    style.textContent = css;
-    (document.head || document.documentElement).append(style);
-    return style;
+function regExpList(rules) {
+  return `[${rules.map(({ source, flags }) => `new RegExp(${JSON.stringify(source)}, ${JSON.stringify(flags)})`).join(", ")}]`;
+}
+
+// Regular-expression @include and @exclude rules can't be registered with Chrome, so the body checks them first.
+// The check shares the script's first line, which keeps reported line numbers unchanged.
+function guarded(source, guard) {
+  if (!guard) return source;
+  const strict = /^(?:\s|\/\/[^\n]*|\/\*[\s\S]*?\*\/)*(["'])use strict\1/.test(source);
+  const include = guard.include ? `${regExpList(guard.include)}.some(rule => rule.test(href))` : "true";
+  const check = `(href => ${include} && !${regExpList(guard.exclude)}.some(rule => rule.test(href)))(location.href.replace(/#.*$/, ""))`;
+  return `(function () {${strict ? ' "use strict";' : ""} if (!${check}) return; ${source}\n}).call(this);`;
+}
+
+export function buildInjection(script, metadata, { deps = {}, values } = {}) {
+  if (deps.error) throw new Error(deps.error);
+  const requires = metadata.requires.map(url => {
+    const entry = deps.requires?.find(item => item.url === url);
+    if (!entry) throw new Error(`${url} hasn’t been downloaded. Save the script again to fetch its @require files.`);
+    return { code: entry.code };
+  });
+  const resources = Object.fromEntries(metadata.resources.map(({ name, url }) => {
+    const entry = deps.resources?.find(item => item.name === name && item.url === url);
+    if (!entry) throw new Error(`@resource ${name} hasn’t been downloaded. Save the script again to fetch it.`);
+    return [name, entry.dataUrl];
+  }));
+  const page = metadata.injectInto === "page";
+  const config = {
+    id: script.id,
+    page,
+    allowed: Object.keys(grantFamilies).filter(family => allows(metadata.grants, family)),
+    values: metadata.grants.some(grant => syncValueGrants.includes(grant)) ? values ?? {} : null,
+    resources,
+    info: {
+      uuid: script.id,
+      scriptHandler: "Tailorscript",
+      version: chrome.runtime.getManifest?.().version ?? "",
+      injectInto: page ? "page" : "content",
+      scriptMetaStr: metadata.headerText,
+      script: {
+        name: metadata.name, namespace: metadata.namespace, version: metadata.version, description: metadata.description,
+        author: metadata.author, homepage: metadata.homepage, matches: metadata.matches, excludes: metadata.excludes,
+        includes: metadata.includes, excludeMatches: metadata.excludeMatches, grant: metadata.grants, connects: metadata.connects,
+        requires: metadata.requires, resources: metadata.resources, "run-at": metadata.runAt.replace("_", "-")
+      }
+    }
   };
-` : ""}${values.length ? `  const value = async (op, key, data) => {
-    const reply = await send({ type: "value", op, key, value: data });
-    if (reply?.error) throw new Error(reply.error);
-    return reply?.value;
+  return {
+    world: page ? "MAIN" : "USER_SCRIPT",
+    ...(page ? {} : { worldId: script.id }),
+    js: [{ code: `(${installRuntime})(${JSON.stringify(config)});` }, ...requires, { code: guarded(script.source, metadata.targets.guard) }]
   };
-  globalThis.GM = Object.freeze({ ${values.join(", ")} });
-` : ""}})();`;
+}
+
+async function storedExtras(scripts) {
+  const keys = scripts.flatMap(script => [`deps:${script.id}`, `values:${script.id}`]);
+  return keys.length ? chrome.storage.local.get(keys) : {};
+}
+
+// Everything Chrome needs to run one script now, used by Run now in the popup.
+export async function injectionFor(script) {
+  const metadata = parseSource(script.source);
+  const stored = await storedExtras([script]);
+  return { metadata, ...buildInjection(script, metadata, { deps: stored[`deps:${script.id}`], values: stored[`values:${script.id}`] }) };
 }
 
 export async function syncScripts(scripts, settings = {}) {
   const issues = Object.create(null);
+  const manual = [];
   const enabled = settings.paused ? [] : scripts.filter(script => script.enabled);
 
   let api;
@@ -39,27 +77,40 @@ export async function syncScripts(scripts, settings = {}) {
   try {
     api = chrome.userScripts;
     await api.configureWorld({ messaging: true });
-    current = (await api.getScripts()).map(({ id }) => id);
+    current = await api.getScripts();
   } catch {
     return {
       active: [],
+      manual,
       issues,
-      error: "Check Allow User Scripts in Chrome’s extension details, then reopen this page to retry."
+      setupNeeded: true,
+      error: "Chrome is blocking userscripts. Turn on Allow User Scripts in Tailorscript’s extension details."
     };
   }
 
+  const stored = await storedExtras(enabled);
   const registrations = [];
   for (const script of enabled) {
     try {
-      const { matches, excludeMatches, runAt, grants, allFrames } = parseSource(script.source);
-      if (!await chrome.permissions.contains({ origins: originsFor(matches) })) {
+      const metadata = parseSource(script.source);
+      if (metadata.runAt === "manual") {
+        manual.push(script.id);
+        continue;
+      }
+      const { targets } = metadata;
+      if (!await chrome.permissions.contains({ origins: originsFor(targets.matches) })) {
         issues[script.id] = "Site access is missing. Save the enabled script to request access again.";
         continue;
       }
       registrations.push({
-        id: script.id, matches, excludeMatches, runAt, allFrames,
-        world: "USER_SCRIPT", worldId: script.id,
-        js: [{ code: prelude(script.id, grants) }, { code: script.source }]
+        id: script.id,
+        matches: targets.matches,
+        excludeMatches: targets.excludeMatches,
+        ...(targets.includeGlobs.length ? { includeGlobs: targets.includeGlobs } : {}),
+        ...(targets.excludeGlobs.length ? { excludeGlobs: targets.excludeGlobs } : {}),
+        runAt: metadata.runAt,
+        allFrames: metadata.allFrames,
+        ...buildInjection(script, metadata, { deps: stored[`deps:${script.id}`], values: stored[`values:${script.id}`] })
       });
     } catch (error) {
       issues[script.id] = error.message;
@@ -67,12 +118,18 @@ export async function syncScripts(scripts, settings = {}) {
   }
 
   // Chrome injects scripts with the same timing in registration order, so a reordered library re-registers everything.
+  // update() keeps fields it isn't given, so dropping globs or changing worlds also needs a fresh registration.
   const desired = registrations.map(({ id }) => id);
-  const kept = current.filter(id => desired.includes(id));
-  const inOrder = kept.join("\n") === desired.slice(0, kept.length).join("\n");
-  const registered = new Set(inOrder ? kept : []);
+  const kept = current.filter(({ id }) => desired.includes(id));
+  const inOrder = kept.map(({ id }) => id).join("\n") === desired.slice(0, kept.length).join("\n");
+  const reshaped = kept.some(old => {
+    const next = registrations.find(({ id }) => id === old.id);
+    return (old.world ?? "USER_SCRIPT") !== next.world || (old.includeGlobs?.length && !next.includeGlobs) ||
+      (old.excludeGlobs?.length && !next.excludeGlobs);
+  });
+  const registered = new Set(inOrder && !reshaped ? kept.map(({ id }) => id) : []);
   const errors = [];
-  for (const id of current) {
+  for (const { id } of current) {
     if (registered.has(id)) continue;
     try {
       await api.unregister({ ids: [id] });
@@ -99,5 +156,5 @@ export async function syncScripts(scripts, settings = {}) {
     }
   }
 
-  return { active, issues, error: errors.join(" ") };
+  return { active, manual, issues, error: errors.join(" ") };
 }

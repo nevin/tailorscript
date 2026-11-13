@@ -1,11 +1,12 @@
 import { timeAgo } from "../shared/format.js";
 import { readScripts } from "../shared/storage.js";
 import { readSyncBackup } from "../shared/sync-backup.js";
-import { matchesUrl, originsFor, parseSource, runsOn, updateTargets } from "../shared/userscript.js";
+import { describeGrants, installOrigins, installPageUrl } from "../shared/install.js";
+import { allows, grantFamilies, parseSource, runsOn, targetsMatch, updateTargets } from "../shared/userscript.js";
 import { validate } from "../shared/validate.js";
 import { decodeImport } from "./backup-file.js";
-import { diffLines } from "./diff.js";
-import { editLines, findMatches, highlight } from "./editor.js";
+import { diffView } from "./diff.js";
+import { addGrants, completions, editLines, findMatches, highlight, missingGrants } from "./editor.js";
 import { templates } from "./templates.js";
 
 const starter = `// ==UserScript==
@@ -55,6 +56,11 @@ const orderControls = document.querySelector("#order-controls");
 const orderLabel = document.querySelector("#order-label");
 const moveUp = document.querySelector("#move-up");
 const moveDown = document.querySelector("#move-down");
+const setupBanner = document.querySelector("#setup-banner");
+const updatesButton = document.querySelector("#updates");
+const updateState = document.querySelector("#update-state");
+const hints = document.querySelector("#hints");
+const completionList = document.querySelector("#completions");
 
 const search = document.querySelector("#search");
 // Status filter chips are radio buttons; this keeps the select-style .value interface the library code reads.
@@ -170,6 +176,7 @@ function refreshSource() {
     } catch (error) {
       validation.textContent = error.message;
     }
+    renderHints();
   }, 250);
 }
 
@@ -216,7 +223,10 @@ function renderEditorDetails() {
   const script = scripts.find(item => item.id === selectedId);
   deleteButton.hidden = !script;
   historyButton.hidden = !script?.history?.length;
-  valuesButton.hidden = !metadataFor(script ?? { source: "" })?.grants.some(grant => grant.startsWith("GM."));
+  const metadata = script && metadataFor(script);
+  valuesButton.hidden = !metadata || !["getValue", "setValue", "deleteValue", "listValues"].some(family => allows(metadata.grants, family));
+  updatesButton.hidden = !script?.installUrl && !metadata?.updateUrl;
+  renderUpdateState(script);
   const index = scripts.indexOf(script);
   orderControls.hidden = !script || scripts.length < 2;
   orderLabel.textContent = `Runs ${index + 1} of ${scripts.length}`;
@@ -257,9 +267,10 @@ function renderDiagnostics() {
     const item = document.createElement("li");
     let state;
     try {
-      const { matches, excludeMatches } = parseSource(script.source);
-      if (!matches.some(pattern => matchesUrl(pattern, url))) state = "URL does not match";
-      else if (excludeMatches.some(pattern => matchesUrl(pattern, url))) state = "Excluded by rule";
+      const { targets } = parseSource(script.source);
+      const included = targetsMatch({ ...targets, excludeMatches: [], excludeGlobs: [], guard: targets.guard && { ...targets.guard, exclude: [] } }, url);
+      if (!included) state = "URL does not match";
+      else if (!targetsMatch(targets, url)) state = "Excluded by rule";
       else if (!script.enabled) state = "Matches · disabled";
       else if (registrationState?.active.includes(script.id)) {
         state = "Matches · registered" + (runSummary(script.id) ? ` · ${runSummary(script.id).text}` : "");
@@ -276,6 +287,8 @@ function renderDiagnostics() {
 function scriptStatus(script) {
   if (!script.enabled) return { pill: "Off", detail: "Off", state: "off" };
   if (settings.paused) return { pill: "Paused", detail: "Paused", state: "off" };
+  if (registrationState?.setupNeeded) return { pill: "Needs setup", detail: "Chrome is blocking userscripts", state: "warning" };
+  if (registrationState?.manual?.includes(script.id)) return { pill: "Manual", detail: "Runs when you choose Run now", state: "ready" };
   if (!registrationState?.active.includes(script.id)) {
     return { pill: "Needs attention", detail: registrationState?.issues[script.id] ? "Needs site access" : "Not registered", state: "warning" };
   }
@@ -341,6 +354,7 @@ function renderLibrary() {
     state.dataset.state = status.state;
     const meta = element("span", undefined, "script-meta");
     meta.append(state);
+    if (script.pendingUpdate) meta.append(element("span", "Update available", "script-update"));
     if (metadata?.tags.length) meta.append(element("span", metadata.tags.map(tag => `#${tag}`).join(" "), "script-tags"));
     button.append(element("span", script.name, "script-name"), meta);
     button.title = registrationState?.issues[script.id] ?? runs[script.id]?.error?.message ?? "";
@@ -383,6 +397,7 @@ function renderBackupState() {
 function renderSettings() {
   pauseAll.checked = Boolean(settings.paused);
   pausedBanner.hidden = !settings.paused;
+  setupBanner.hidden = !registrationState?.setupNeeded;
 }
 
 function render() {
@@ -406,10 +421,16 @@ function populateSetup() {
 
 function updateTargetsSummary() {
   try {
-    const { matches, excludeMatches, allFrames } = parseSource(source.value);
-    targets.replaceChildren("Runs on", ...matches.map(pattern => element("code", pattern)));
-    if (excludeMatches.length) targets.append("except", ...excludeMatches.map(pattern => element("code", pattern, "excluded")));
-    if (allFrames) targets.append("including frames");
+    const metadata = parseSource(source.value);
+    const sites = [...metadata.matches, ...metadata.includes];
+    const excluded = [...metadata.excludeMatches, ...metadata.excludes];
+    targets.replaceChildren("Runs on", ...sites.map(pattern => element("code", pattern)));
+    if (excluded.length) targets.append("except", ...excluded.map(pattern => element("code", pattern, "excluded")));
+    if (metadata.allFrames) targets.append("including frames");
+    if (metadata.runAt === "manual") targets.append("· only from Run now in the popup");
+    if (metadata.injectInto === "page") targets.append("· in the page’s own context");
+    const files = metadata.requires.length + metadata.resources.length;
+    if (files) targets.append(`· loads ${files} file${files === 1 ? "" : "s"}`);
   } catch {
     targets.textContent = "Add the sites this script runs on under Name and sites.";
   }
@@ -434,6 +455,7 @@ async function send(message) {
   const response = await chrome.runtime.sendMessage(message);
   if (!response?.ok) throw new Error(response?.error ?? "The script manager did not respond.");
   registrationState = response.state;
+  return response.state;
 }
 
 function controls() {
@@ -466,7 +488,7 @@ async function reloadData() {
 }
 
 async function requestAccess(script) {
-  const granted = await chrome.permissions.request({ origins: originsFor(parseSource(script.source).matches) });
+  const granted = await chrome.permissions.request({ origins: parseSource(script.source).origins });
   if (!granted) throw new Error("Site access was declined. Grant access or keep the script disabled.");
 }
 
@@ -483,8 +505,7 @@ function setEnabled(script, value) {
 }
 
 async function reloadMatchingTabs(script) {
-  const { matches } = parseSource(script.source);
-  const tabs = await chrome.tabs.query({ url: matches });
+  const tabs = await chrome.tabs.query({ url: parseSource(script.source).targets.matches });
   const matching = tabs.filter(tab => tab.url && runsOn(script.source, new URL(tab.url)));
   await Promise.all(matching.map(tab => chrome.tabs.reload(tab.id)));
   return matching.length;
@@ -544,13 +565,24 @@ inspect.addEventListener("click", () => {
   if (!diagnostics.hidden) diagnosticUrl.focus();
 });
 
-source.addEventListener("input", refreshSource);
+source.addEventListener("input", event => {
+  refreshSource();
+  if (event.inputType?.startsWith("insert")) showCompletions();
+  else closeCompletions();
+});
 source.addEventListener("selectionchange", () => {
   updateEditor();
   refreshHighlight();
 });
-source.addEventListener("blur", refreshHighlight);
-source.addEventListener("scroll", syncGutter);
+source.addEventListener("blur", () => {
+  refreshHighlight();
+  closeCompletions();
+});
+source.addEventListener("mousedown", closeCompletions);
+source.addEventListener("scroll", () => {
+  syncGutter();
+  if (!completionList.hidden) positionCompletions();
+});
 
 function primary(event) {
   return isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
@@ -577,7 +609,34 @@ function applyEdit({ from, to, text, selectionStart, selectionEnd }) {
 }
 
 source.addEventListener("keydown", event => {
-  if (event.isComposing || event.altKey || event.shiftKey) return;
+  if (event.isComposing) return;
+  if (!completionList.hidden) {
+    const count = completion.items.length;
+    const moves = { ArrowDown: 1, ArrowUp: count - 1 };
+    if (moves[event.key]) {
+      event.preventDefault();
+      activeCompletion = (activeCompletion + moves[event.key]) % count;
+      highlightCompletion();
+      return;
+    }
+    if ((event.key === "Enter" || event.key === "Tab") && !event.shiftKey) {
+      event.preventDefault();
+      acceptCompletion();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeCompletions();
+      return;
+    }
+  }
+  if (event.ctrlKey && !event.metaKey && event.key === " ") {
+    event.preventDefault();
+    showCompletions(true);
+    return;
+  }
+  if (event.altKey || event.shiftKey) return;
   const lineCommands = { "]": "indent", "[": "outdent", "/": "comment" };
   if (primary(event) && lineCommands[event.key]) {
     event.preventDefault();
@@ -712,7 +771,7 @@ newButton.addEventListener("click", () => openTemplates());
 form.addEventListener("submit", event => {
   event.preventDefault();
   perform(async () => {
-    const { name, matches } = validate(source.value);
+    const { name, origins } = validate(source.value);
     const script = {
       id: selectedId ?? crypto.randomUUID(),
       name,
@@ -721,7 +780,7 @@ form.addEventListener("submit", event => {
     };
     const wasEnabled = Boolean(loaded?.enabled);
     if (script.enabled) {
-      const granted = await chrome.permissions.request({ origins: originsFor(matches) });
+      const granted = await chrome.permissions.request({ origins });
       if (!granted) throw new Error("Site access was declined. Grant access or save the script disabled.");
     }
     await send({ type: "save", id: script.id, script, expected: loaded });
@@ -824,7 +883,8 @@ function reviewImport(entries, origin) {
     choice.value = identical ? "skip" : "new";
     choice.setAttribute("aria-label", `Import action for ${entry.name}`);
     item.append(element("strong", entry.name),
-      element("span", ` — ${entry.matches.join(", ")}${entry.excludeMatches.length ? `; excludes ${entry.excludeMatches.join(", ")}` : ""}`),
+      element("span", ` — ${[...entry.matches, ...entry.includes].join(", ")}${entry.excludeMatches.length + entry.excludes.length
+        ? `; excludes ${[...entry.excludeMatches, ...entry.excludes].join(", ")}` : ""}`),
       element("span", identical ? "Identical to a script in your library." : sameName ? "A script with this name already exists." : "", "import-note"),
       choice);
     rows.append(item);
@@ -859,29 +919,6 @@ importFile.addEventListener("change", () => {
   });
 });
 
-function renderDiff(before, after) {
-  const rows = diffLines(before, after);
-  const output = element("pre", undefined, "diff");
-  const changed = rows.map(row => row.kind !== "same");
-  const near = index => changed.slice(Math.max(0, index - 3), index + 4).some(Boolean);
-  let hidden = 0;
-  const flush = () => {
-    if (hidden) output.append(element("span", `… ${hidden} unchanged line${hidden === 1 ? "" : "s"}\n`, "diff-skip"));
-    hidden = 0;
-  };
-  rows.forEach((row, index) => {
-    if (!near(index)) {
-      hidden++;
-      return;
-    }
-    flush();
-    output.append(element("span", `${{ same: " ", added: "+", removed: "-" }[row.kind]} ${row.text}\n`, `diff-${row.kind}`));
-  });
-  flush();
-  if (!changed.some(Boolean)) return element("p", "This version matches the editor.");
-  return output;
-}
-
 function showHistory() {
   const script = scripts.find(item => item.id === selectedId);
   if (!script?.history?.length) return;
@@ -911,7 +948,7 @@ function showHistory() {
       try {
         openReview(`Changes since ${new Date(version.savedAt).toLocaleString()}`,
           element("p", "Lines marked - are only in that version. Lines marked + are only in the editor.", "diff-help"),
-          renderDiff(version.source, source.value), makeButton("Back to history", showHistory));
+          diffView(version.source, source.value), makeButton("Back to history", showHistory));
       } catch (error) {
         status.textContent = error.message;
       }
@@ -992,7 +1029,7 @@ async function showSiteAccess() {
   for (const origin of granted) {
     const users = scripts.filter(script => {
       const metadata = metadataFor(script);
-      return metadata && originsFor(metadata.matches).includes(origin);
+      return metadata?.origins.includes(origin);
     });
     const item = element("li");
     item.append(element("code", origin),
@@ -1024,7 +1061,7 @@ function settingSwitch(key, title, help) {
   toggle.checked = Boolean(settings[key]);
   toggle.addEventListener("change", () => {
     review.close();
-    sendSettings({ [key]: toggle.checked }).then(() => showBackup());
+    sendSettings({ [key]: toggle.checked }).then(showBackup);
   });
   const label = element("label", undefined, "switch-label");
   const text = element("span", title);
@@ -1033,15 +1070,47 @@ function settingSwitch(key, title, help) {
   return label;
 }
 
-function showBackup() {
+function oneClickSwitch(granted) {
+  const toggle = document.createElement("input");
+  toggle.type = "checkbox";
+  toggle.className = "switch";
+  toggle.setAttribute("role", "switch");
+  toggle.checked = granted;
+  toggle.addEventListener("change", async () => {
+    try {
+      const changed = toggle.checked
+        ? await chrome.permissions.request({ origins: installOrigins })
+        : await chrome.permissions.remove({ origins: installOrigins });
+      if (!changed) toggle.checked = !toggle.checked;
+    } catch (error) {
+      toggle.checked = !toggle.checked;
+      status.textContent = error.message;
+    }
+  });
+  const label = element("label", undefined, "switch-label");
+  const text = element("span", "One-click installs");
+  text.append(element("small", "Opening a .user.js link on Greasy Fork, OpenUserJS or GitHub shows Tailorscript’s install page. Needs access to those sites."));
+  label.append(toggle, text);
+  return label;
+}
+
+async function showBackup() {
+  const [oneClick, commands] = await Promise.all([
+    chrome.permissions.contains({ origins: installOrigins }),
+    chrome.commands?.getAll() ?? []
+  ]);
+  const shortcut = commands.find(command => command.name === "toggle-pause")?.shortcut;
   const syncHelp = settings.syncBackup
     ? syncState?.error ? `Last attempt failed: ${syncState.error}` : syncState?.at ? `Last synced ${timeAgo(syncState.at)}.` : "Waiting for the next change."
     : "Stores script sources only (about 100 KB), not history, site access, or enabled settings.";
   const list = element("div", undefined, "settings-list");
   list.append(
     settingSwitch("reloadAfterSave", "Reload matching tabs after saving", "Open tabs that a saved script runs on reload so the change applies right away."),
-    settingSwitch("syncBackup", "Back up to Chrome sync", syncHelp));
-  openReview("Settings & backup", list,
+    settingSwitch("syncBackup", "Back up to Chrome sync", syncHelp),
+    oneClickSwitch(oneClick));
+  const keys = element("p", shortcut ? `Press ${shortcut} anywhere in Chrome to pause or resume all scripts. ` : "Set a keyboard shortcut to pause or resume all scripts. ");
+  keys.append(makeButton("Change shortcut", () => chrome.tabs.create({ url: "chrome://extensions/shortcuts" })));
+  openReview("Settings & backup", list, keys,
     element("p", settings.lastExportAt ? `Last exported ${new Date(settings.lastExportAt).toLocaleString()}.` : "You haven’t exported a backup file yet."),
     makeButton("Restore from Chrome sync", () => perform(async () => {
       const { text, savedAt } = await readSyncBackup();
@@ -1049,6 +1118,248 @@ function showBackup() {
     })));
 }
 backupButton.addEventListener("click", showBackup);
+
+
+let completion;
+let activeCompletion = 0;
+let charWidth;
+
+function closeCompletions() {
+  completion = undefined;
+  completionList.hidden = true;
+  source.removeAttribute("aria-activedescendant");
+}
+
+function showCompletions(explicit = false) {
+  completion = source.selectionStart === source.selectionEnd && completions(source.value, source.selectionStart, explicit);
+  if (!completion) {
+    closeCompletions();
+    return;
+  }
+  activeCompletion = 0;
+  completionList.replaceChildren(...completion.items.map((item, index) => {
+    const option = element("li");
+    option.id = `completion-${index}`;
+    option.setAttribute("role", "option");
+    option.append(element("span", item.label, "completion-label"));
+    if (item.detail) option.append(element("span", item.detail, "completion-detail"));
+    option.addEventListener("mousedown", event => {
+      event.preventDefault();
+      acceptCompletion(index);
+    });
+    return option;
+  }));
+  completionList.hidden = false;
+  positionCompletions();
+  highlightCompletion();
+}
+
+// The editor is monospaced, so the caret's position follows from its line and visual column.
+function positionCompletions() {
+  if (!charWidth) {
+    const probe = element("span", "x".repeat(100));
+    probe.style.cssText = `position:absolute;visibility:hidden;white-space:pre;font:${getComputedStyle(source).font}`;
+    document.body.append(probe);
+    charWidth = probe.getBoundingClientRect().width / 100;
+    probe.remove();
+  }
+  const style = getComputedStyle(source);
+  const before = source.value.slice(0, completion.from);
+  const line = before.split("\n").length - 1;
+  let column = 0;
+  for (const char of before.slice(before.lastIndexOf("\n") + 1)) column = char === "\t" ? column + 2 - (column % 2) : column + 1;
+  completionList.style.top = `${parseFloat(style.paddingTop) + (line + 1) * parseFloat(style.lineHeight) - source.scrollTop}px`;
+  completionList.style.left = `${source.offsetLeft + parseFloat(style.paddingLeft) + column * charWidth - source.scrollLeft}px`;
+}
+
+function highlightCompletion() {
+  for (const [index, option] of [...completionList.children].entries()) {
+    option.setAttribute("aria-selected", String(index === activeCompletion));
+    if (index === activeCompletion) option.scrollIntoView({ block: "nearest" });
+  }
+  source.setAttribute("aria-activedescendant", `completion-${activeCompletion}`);
+}
+
+function acceptCompletion(index = activeCompletion) {
+  const { from, to, items } = completion;
+  const text = items[index].insert ?? items[index].label;
+  closeCompletions();
+  applyEdit({ from, to, text, selectionStart: from + text.length, selectionEnd: from + text.length });
+}
+
+function renderHints() {
+  hints.replaceChildren();
+  let metadata;
+  try {
+    metadata = parseSource(source.value);
+  } catch {
+    return;
+  }
+  const missing = missingGrants(source.value);
+  if (missing.length) {
+    const hint = element("p", `This script uses ${missing.join(", ")} without a matching @grant line, so ${missing.length === 1 ? "it" : "they"} won’t be defined.`, "hint");
+    hint.append(makeButton(missing.length === 1 ? `Add @grant ${missing[0]}` : "Add the @grant lines", () => {
+      const before = source.value;
+      const next = addGrants(before, missing);
+      const caret = source.selectionStart;
+      const shift = caret > before.indexOf("==/UserScript==") ? next.length - before.length : 0;
+      const { scrollTop } = source;
+      applyEdit({ from: 0, to: before.length, text: next, selectionStart: caret + shift, selectionEnd: caret + shift });
+      source.scrollTop = scrollTop;
+      refreshSource();
+    }));
+    hints.append(hint);
+  }
+  if (metadata.unsupportedGrants.length) {
+    hints.append(element("p", `Tailorscript doesn’t provide ${metadata.unsupportedGrants.join(", ")}, so calls to ${metadata.unsupportedGrants.length === 1 ? "it" : "them"} will fail.`, "hint warning"));
+  }
+}
+
+function renderUpdateState(script) {
+  updateState.replaceChildren();
+  updateState.dataset.state = "";
+  if (script?.pendingUpdate) {
+    updateState.dataset.state = "available";
+    updateState.append(`Version ${script.pendingUpdate.version} is available${script.pendingUpdate.reasons.length ? " and needs your review" : ""}.`,
+      makeButton("Review update", () => reviewUpdate(script)));
+  } else if (script?.updateCheck?.error) {
+    updateState.dataset.state = "warning";
+    updateState.append(`Update check failed ${timeAgo(script.updateCheck.at)}: ${script.updateCheck.error}`);
+  }
+}
+
+function bulletList(items) {
+  const node = element("ul", undefined, "plain-list");
+  node.append(...items.map(({ text, warning }) => element("li", text, warning ? "warning-item" : "")));
+  return node;
+}
+
+function reviewUpdate(script) {
+  const update = script.pendingUpdate;
+  let next;
+  try {
+    next = parseSource(update.source);
+  } catch (error) {
+    status.textContent = error.message;
+    return;
+  }
+  const apply = makeButton("Apply update", () => {
+    review.close();
+    perform(async () => {
+      if (script.enabled && !await chrome.permissions.request({ origins: next.origins })) {
+        throw new Error("Site access was declined, so the update wasn’t applied.");
+      }
+      await send({ type: "apply-update", id: script.id });
+      await reloadData();
+      const updated = scripts.find(item => item.id === script.id);
+      if (script.id === selectedId && !isDirty()) select(updated);
+      status.textContent = `Updated “${updated.name}” to v${update.version}. Reload matching pages to run it.`;
+    });
+  });
+  apply.className = "primary";
+  const actions = element("div", undefined, "dialog-actions");
+  actions.append(apply, makeButton("Skip this version", () => {
+    review.close();
+    perform(async () => {
+      await send({ type: "dismiss-update", id: script.id });
+      await reloadData();
+      status.textContent = `Skipped v${update.version}. Tailorscript will offer the next version.`;
+    });
+  }));
+  openReview(`Update “${script.name}” to v${update.version}`,
+    ...(update.reasons.length ? [element("p", "This update wasn’t applied automatically because:"), bulletList(update.reasons.map(text => ({ text })))] : []),
+    element("p", "After updating, it can:"), bulletList(describeGrants(next, grantFamilies)),
+    actions, element("p", "Changes:"), diffView(script.source, update.source));
+}
+
+function showUpdates() {
+  const script = scripts.find(item => item.id === selectedId);
+  if (!script) return;
+  const metadata = metadataFor(script);
+  const details = element("dl", undefined, "facts");
+  const fact = (label, value) => details.append(element("dt", label), element("dd", value));
+  fact("Installed from", script.installUrl ?? metadata?.updateUrl ?? "—");
+  fact("Version", metadata?.version ? `v${metadata.version}` : "Not declared");
+  fact("Last checked", script.updateCheck?.at ? timeAgo(script.updateCheck.at) : "Never");
+  if (script.updateCheck?.error) fact("Last error", script.updateCheck.error);
+  const toggle = document.createElement("input");
+  toggle.type = "checkbox";
+  toggle.className = "switch";
+  toggle.setAttribute("role", "switch");
+  toggle.checked = script.autoUpdate !== false;
+  toggle.addEventListener("change", () => perform(async () => {
+    await send({ type: "auto-update", id: script.id, enabled: toggle.checked });
+    await reloadData();
+  }));
+  const label = element("label", undefined, "switch-label");
+  const text = element("span", "Update automatically");
+  text.append(element("small", "Updates that need new access or APIs, or would replace your edits, always wait for your review."));
+  label.append(toggle, text);
+  const settingsList = element("div", undefined, "settings-list");
+  settingsList.append(label);
+  const actions = element("div", undefined, "dialog-actions");
+  actions.append(makeButton("Check now", () => {
+    review.close();
+    checkForUpdates(script.id);
+  }));
+  if (script.pendingUpdate) actions.prepend(makeButton(`Review v${script.pendingUpdate.version}`, () => reviewUpdate(script)));
+  openReview("Updates", details, settingsList, actions);
+}
+updatesButton.addEventListener("click", showUpdates);
+
+function checkForUpdates(id) {
+  return perform(async () => {
+    status.textContent = "Checking for updates…";
+    const { updateSummary: summary } = await send({ type: "check-updates", id });
+    await reloadData();
+    const fresh = scripts.find(item => item.id === selectedId);
+    if (fresh && !isDirty() && fresh.source !== loaded?.source) select(fresh);
+    const parts = [
+      summary.updated.length && `updated ${summary.updated.join(", ")}`,
+      summary.waiting.length && `${summary.waiting.length} waiting for review`,
+      summary.failed.length && `${summary.failed.length} couldn’t be checked`
+    ].filter(Boolean);
+    status.textContent = !summary.checked ? "None of your scripts have an update address."
+      : parts.length ? `Checked ${summary.checked} script${summary.checked === 1 ? "" : "s"}: ${parts.join(", ")}.`
+      : `Checked ${summary.checked} script${summary.checked === 1 ? "" : "s"}. Everything is up to date.`;
+  });
+}
+document.querySelector("#check-updates").addEventListener("click", () => checkForUpdates());
+
+document.querySelector("#install-url").addEventListener("click", () => {
+  const field = document.createElement("input");
+  field.type = "url";
+  field.placeholder = "https://greasyfork.org/…/script.user.js";
+  field.setAttribute("aria-label", "Script address");
+  const go = makeButton("Review script", () => {
+    try {
+      const url = new URL(field.value.trim());
+      if (!["http:", "https:"].includes(url.protocol)) throw new Error();
+      review.close();
+      chrome.tabs.create({ url: installPageUrl(url.href) });
+    } catch {
+      field.setCustomValidity("Enter an http or https address.");
+      field.reportValidity();
+    }
+  });
+  go.className = "primary";
+  field.addEventListener("input", () => field.setCustomValidity(""));
+  field.addEventListener("keydown", event => {
+    if (event.key === "Enter" && !event.isComposing) go.click();
+  });
+  const row = element("div", undefined, "url-row");
+  row.append(field, go);
+  openReview("Install from URL", element("p", "Paste the address of a .user.js file. You’ll see what it does before anything is installed."), row);
+  field.focus();
+});
+
+document.querySelector("#open-extension-settings").addEventListener("click", () => {
+  chrome.tabs.create({ url: `chrome://extensions/?id=${chrome.runtime.id}` });
+});
+// Allow User Scripts has no change event, so check again whenever the user comes back to this tab.
+window.addEventListener("focus", () => {
+  if (registrationState?.setupNeeded && !busy) perform(() => send({ type: "sync" }));
+});
 
 function newScriptRequested(site) {
   chrome.storage.session.remove("newScriptSite");

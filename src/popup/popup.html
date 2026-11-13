@@ -10,8 +10,21 @@
 <body>
   <header>
     <h1><img src="../icons/logo.svg" alt="" width="22" height="22">Tailorscript</h1>
-    <label class="switch-label"><input type="checkbox" role="switch" class="switch" id="paused"> Pause all</label>
+    <label class="switch-label" id="pause-label"><input type="checkbox" role="switch" class="switch" id="paused"> Pause all</label>
   </header>
+  <section id="setup" class="card warning" hidden aria-labelledby="setup-title">
+    <h2 id="setup-title">One step before scripts can run</h2>
+    <ol>
+      <li>Open Tailorscript’s extension details.</li>
+      <li>Turn on <strong>Allow User Scripts</strong>.</li>
+      <li>Come back and reload your tabs.</li>
+    </ol>
+    <button id="open-settings" type="button" class="primary">Open extension details</button>
+  </section>
+  <section id="install-banner" class="card" hidden>
+    <p>This page is a userscript.</p>
+    <button id="install-page" type="button" class="primary">Review and install</button>
+  </section>
   <section class="site" aria-labelledby="page">
     <div>
       <h2 id="page"></h2>
@@ -27,6 +40,7 @@
   <footer>
     <button id="create" type="button" class="primary">+ New script for this site</button>
     <div class="links">
+      <button id="find" type="button" class="link">Find scripts for this site</button>
       <button id="check" type="button" class="link">Check this page</button>
       <button id="manager" type="button" class="link">Open manager</button>
     </div>
