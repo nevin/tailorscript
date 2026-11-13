@@ -1,0 +1,42 @@
+name: Release to Chrome Web Store
+
+# Runs only when started by hand from the Actions tab, after the version has been bumped and merged.
+on:
+  workflow_dispatch:
+    inputs:
+      submit:
+        description: "After uploading: draft (upload only), review (publish when approved) or staged (stage when approved)"
+        type: choice
+        options: [draft, review, staged]
+        default: draft
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: chrome-web-store
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run release
+      - name: Upload to the Chrome Web Store
+        env:
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          SUBMIT_MODE: ${{ inputs.submit }}
+        run: |
+          case "$SUBMIT_MODE" in
+            review) npm run submit -- --publish ;;
+            staged) npm run submit -- --publish --staged ;;
+            *) npm run submit ;;
+          esac
+      - uses: actions/upload-artifact@v7
+        with:
+          name: extension-package
+          path: release/

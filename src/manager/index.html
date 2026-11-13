@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tailorscript</title>
+  <link rel="icon" href="../icons/logo.svg">
+  <link rel="stylesheet" href="manager.css">
+  <script type="module" src="manager.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <h1><img src="../icons/logo.svg" alt="" width="32" height="32">Tailorscript</h1>
+    <div class="header-actions">
+      <label class="toggle"><input type="checkbox" id="pause-all"> Pause all scripts</label>
+      <button id="site-access" type="button">Site access</button>
+      <button id="inspect" type="button" aria-expanded="false" aria-controls="diagnostics">Check a page</button>
+    </div>
+  </header>
+  <p id="paused-banner" role="status" hidden>All scripts are paused and won’t run on new page loads.
+    <button id="resume" type="button">Resume</button></p>
+  <main>
+    <section class="diagnostics" id="diagnostics" hidden>
+      <h2>Page diagnostics</h2>
+      <label for="diagnostic-url">Page URL</label>
+      <input id="diagnostic-url" type="url" placeholder="https://example.com/">
+      <p id="diagnostic-message" role="status"></p>
+      <ul id="diagnostic-results"></ul>
+    </section>
+    <aside aria-labelledby="library-title">
+      <div class="toolbar library-heading">
+        <h2 id="library-title">Scripts</h2>
+        <button id="new" type="button">New script</button>
+      </div>
+      <label class="sr-only" for="search">Search scripts</label>
+      <input id="search" type="search" placeholder="Search by name, site, or tag">
+      <div class="library-filters">
+        <label class="sr-only" for="filter">Show</label>
+        <select id="filter">
+          <option value="all">All scripts</option>
+          <option value="enabled">Enabled</option>
+          <option value="disabled">Disabled</option>
+          <option value="attention">Needs attention</option>
+          <option value="page">Run on checked page</option>
+        </select>
+        <label class="sr-only" for="tag">Tag</label>
+        <select id="tag"><option value="">All tags</option></select>
+        <label class="sr-only" for="sort">Sort by</label>
+        <select id="sort">
+          <option value="order">Run order</option>
+          <option value="name">Name</option>
+          <option value="recent">Recently edited</option>
+        </select>
+      </div>
+      <div id="scripts"></div>
+      <p id="library-empty"></p>
+      <div class="file-actions">
+        <button id="import" type="button">Import scripts</button>
+        <button id="export" type="button">Export backup</button>
+        <button id="backup" type="button">Backup settings</button>
+        <button id="trash" type="button">Trash</button>
+        <input id="import-file" type="file" accept=".js,.json" hidden>
+      </div>
+      <p id="backup-state"></p>
+    </aside>
+    <form aria-labelledby="script-title">
+      <div class="toolbar editor-heading">
+        <h2 id="script-title">New script</h2>
+        <button type="submit" id="save">Save script</button>
+      </div>
+      <div class="script-options">
+        <label class="toggle"><input type="checkbox" id="enabled"> Enable on matching pages</label>
+        <label class="toggle"><input type="checkbox" id="reload-after-save"> Reload matching tabs after saving</label>
+        <span id="draft-state" role="status"></span>
+        <div id="targets"></div>
+        <div id="run-state"></div>
+      </div>
+      <details id="setup">
+        <summary>Set name and sites</summary>
+        <div class="setup-fields">
+          <label for="setup-name">Script name</label>
+          <input id="setup-name" type="text" placeholder="My script">
+          <label for="setup-sites">Sites where the script should run</label>
+          <textarea id="setup-sites" rows="3" spellcheck="false" placeholder="https://example.com/*" aria-describedby="setup-help"></textarea>
+          <p id="setup-help">Enter one match rule per line. Use <code>/*</code> for every page on a site.</p>
+          <button id="apply-setup" type="button">Apply to source</button>
+        </div>
+      </details>
+      <label class="source-label" for="source">JavaScript</label>
+      <div class="find-bar" id="find-bar" role="search" hidden>
+        <label class="sr-only" for="find-input">Find</label>
+        <input id="find-input" type="search" placeholder="Find" spellcheck="false">
+        <label class="sr-only" for="replace-input">Replace with</label>
+        <input id="replace-input" type="text" placeholder="Replace" spellcheck="false">
+        <label class="toggle"><input type="checkbox" id="find-case"> Match case</label>
+        <span id="find-count" role="status"></span>
+        <div class="find-actions">
+          <button id="find-previous" type="button" aria-label="Previous match">↑</button>
+          <button id="find-next" type="button" aria-label="Next match">↓</button>
+          <button id="replace-one" type="button">Replace</button>
+          <button id="replace-all" type="button">Replace all</button>
+          <button id="find-close" type="button" aria-label="Close find">✕</button>
+        </div>
+      </div>
+      <div class="editor">
+        <div class="gutter" aria-hidden="true"><pre id="line-numbers"></pre></div>
+        <div class="code-layer" aria-hidden="true"><pre id="highlight"></pre></div>
+        <textarea id="source" spellcheck="false" autocapitalize="off" autocomplete="off"
+          wrap="off" aria-describedby="editor-help validation" required></textarea>
+      </div>
+      <div class="editor-footer">
+        <span id="editor-help"><kbd data-shortcut="S"></kbd> Save · <kbd data-shortcut="F"></kbd> Find ·
+          <kbd data-shortcut="]"></kbd> Indent · <kbd data-shortcut="["></kbd> Outdent · <kbd data-shortcut="/"></kbd> Comment</span>
+        <span id="cursor-position"></span>
+      </div>
+      <p id="validation" aria-live="polite"></p>
+      <p id="status" role="status"></p>
+      <div class="toolbar secondary-actions">
+        <button id="history" type="button" hidden>Version history</button>
+        <button id="values" type="button" hidden>Stored values</button>
+        <span id="order-controls" hidden>
+          <span id="order-label"></span>
+          <button id="move-up" type="button">Run earlier</button>
+          <button id="move-down" type="button">Run later</button>
+        </span>
+        <button type="button" id="delete" hidden>Move to Trash</button>
+      </div>
+    </form>
+  </main>
+  <dialog id="review" aria-labelledby="review-title">
+    <h2 id="review-title"></h2>
+    <div id="review-content"></div>
+    <form method="dialog"><button>Close</button></form>
+  </dialog>
+</body>
+</html>

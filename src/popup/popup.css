@@ -1,0 +1,34 @@
+:root {
+  color-scheme: light dark;
+  font: 14px system-ui, sans-serif;
+  --border: light-dark(#d8e1e4, #37464b);
+  --panel: light-dark(#f2f7f7, #1d292c);
+  --accent: light-dark(#086960, #8bddd0);
+  --surface: light-dark(#fff, #171f22);
+  --muted: light-dark(#52636b, #aebdc2);
+  --warning: light-dark(#845009, #f2c883);
+  --danger: light-dark(#9c332c, #ffada8);
+}
+body { width: 22rem; margin: 0; padding: .9rem; background: var(--surface); }
+header { display: flex; justify-content: space-between; align-items: start; gap: .75rem; }
+h1 { font-size: 1rem; margin: 0; }
+#page { margin: .15rem 0 0; color: var(--muted); font-size: .8rem; overflow-wrap: anywhere; }
+.toggle { display: flex; align-items: center; gap: .3rem; white-space: nowrap; font-size: .85rem; }
+#notice { margin: .6rem 0 0; padding: .45rem .6rem; border-radius: .4rem; background: var(--panel); font-size: .82rem; }
+#notice:empty { display: none; }
+#scripts { list-style: none; margin: .75rem 0 0; padding: 0; display: grid; gap: .45rem; }
+#scripts li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: .2rem .55rem; align-items: center; padding: .55rem .6rem; border: 1px solid var(--border); border-radius: .45rem; }
+#scripts .name { font-weight: 600; overflow-wrap: anywhere; }
+#scripts .run { grid-column: 2 / -1; font-size: .78rem; color: var(--muted); overflow-wrap: anywhere; }
+#scripts .run[data-state="ran"] { color: var(--accent); }
+#scripts .run[data-state="error"] { color: var(--danger); }
+#scripts .run[data-state="warning"] { color: var(--warning); }
+#empty { color: var(--muted); font-size: .85rem; }
+#empty:empty { display: none; }
+footer { display: grid; grid-template-columns: repeat(3, 1fr); gap: .4rem; margin-top: .85rem; }
+button { font: inherit; font-size: .8rem; padding: .4rem .5rem; border: 1px solid var(--border); border-radius: .4rem; background: var(--surface); color: inherit; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:disabled { cursor: default; opacity: .55; }
+#reload[data-suggested="true"] { background: var(--accent); border-color: var(--accent); color: light-dark(#fff, #0e2926); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+h1 { display: flex; align-items: center; gap: .4rem; }

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <title>Tailorscript</title>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="#0a7066"/>
+  <g transform="translate(64 64) scale(.88) translate(-60 -62)">
+    <rect x="14" y="92" width="100" height="16" rx="5" fill="#e6dfd0"/>
+    <path d="M30 58 V34 C30 28 34 24 40 24 C52 24 60 20 72 19 C84 18 94 20 100 26 C104 30 106 36 106 44 V58 C106 70 110 82 112 92 H78 C82 80 84 68 84 58 C84 50 78 44 68 44 C58 44 52 46 52 54 V58 C52 62 49 65 45 65 H37 C33 65 30 62 30 58 Z" fill="#fbf7ee"/>
+    <rect x="65" y="6" width="13" height="13" rx="3" fill="#f6bd4a"/>
+    <circle cx="106" cy="40" r="13" fill="#f6bd4a"/>
+    <path d="M36 65 H43 L39.5 78 Z" fill="#fbf7ee"/>
+    <rect x="4" y="74" width="74" height="18" rx="3" fill="#f6bd4a"/>
+  </g>
+</svg>

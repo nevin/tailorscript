@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <title>Tailorscript</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f8f82"/>
+      <stop offset="1" stop-color="#05514a"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="112" height="112" rx="26" fill="url(#bg)"/>
+  <g transform="translate(64 65) scale(.8) translate(-62 -62)">
+    <!-- Bed: top face and front edge -->
+    <rect x="14" y="92" width="100" height="15" rx="5" fill="#d4ccb9"/>
+    <rect x="14" y="92" width="100" height="7" rx="3.5" fill="#efe9dc"/>
+    <!-- Vintage body: humped arm, arched underside, flared pillar -->
+    <path d="M30 58 V34 C30 28 34 24 40 24 C52 24 60 20 72 19 C84 18 94 20 100 26 C104 30 106 36 106 44 V58 C106 70 110 82 112 92 H78 C82 80 84 68 84 58 C84 50 78 44 68 44 C58 44 52 46 52 54 V58 C52 62 49 65 45 65 H37 C33 65 30 62 30 58 Z" fill="#fbf7ee"/>
+    <path d="M98 24 C103 28 106 35 106 44 V58 C106 70 110 82 112 92 H102 C101 82 99 70 99 58 V40 C99 33 99 28 98 24 Z" fill="#e6dfd0"/>
+    <!-- Face plate on the head and a gold decal stripe along the arm -->
+    <path d="M30 34 C30 28 34 24 40 24 H41 V65 H37 C33 65 30 62 30 58 Z" fill="#e6dfd0"/>
+    <path d="M46 31 C56 30 63 27 72 26 C83 25 90 27 95 31" fill="none" stroke="#f6bd4a" stroke-width="2" stroke-linecap="round"/>
+    <!-- Spool and handwheel -->
+    <rect x="66" y="9" width="10" height="10" rx="2" fill="#f6bd4a"/>
+    <circle cx="106" cy="40" r="11" fill="#f6bd4a"/>
+    <circle cx="106" cy="40" r="7" fill="#d99a2b"/>
+    <circle cx="106" cy="40" r="3" fill="#f6bd4a"/>
+    <!-- Cloth printed with a userscript: the // ==UserScript== header, a line of code, and the seam being sewn -->
+    <path d="M6 71 H80 V92 H6 L10 88.5 L6 85 L10 81.5 L6 78 L10 74.5 Z" fill="#f6bd4a"/>
+    <path d="M18.2 73.3 L15.4 78.7 M22.6 73.3 L19.8 78.7" stroke="#05514a" stroke-width="2.6" stroke-linecap="round"/>
+    <g fill="#05514a">
+      <rect x="26" y="74.3" width="7" height="3.4" rx="1.7"/>
+      <rect x="35.5" y="74.3" width="24" height="3.4" rx="1.7"/>
+      <rect x="62" y="74.3" width="7" height="3.4" rx="1.7"/>
+      <rect x="22" y="80.3" width="20" height="3.4" rx="1.7"/>
+      <rect x="45" y="80.3" width="11" height="3.4" rx="1.7"/>
+    </g>
+    <path d="M16 87.5 H70" stroke="#05514a" stroke-width="3.2" stroke-linecap="round" stroke-dasharray="4.5 5"/>
+    <!-- Needle bar and needle, drawn over the cloth it pierces -->
+    <rect x="36.5" y="65" width="5" height="4" fill="#d4ccb9"/>
+    <path d="M37.8 69 H40.2 L39 77 Z" fill="#fbf7ee"/>
+  </g>
+</svg>

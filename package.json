@@ -1,0 +1,26 @@
+{
+  "name": "tailorscript",
+  "version": "0.4.0",
+  "private": true,
+  "description": "Tailor websites with your own JavaScript. A private userscript manager for Chrome.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.2"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/check.mjs",
+    "lint": "eslint .",
+    "test": "node --test \"tests/**/*.test.mjs\"",
+    "verify": "npm run lint && npm test && npm run check",
+    "package": "node scripts/package.mjs",
+    "release": "npm run verify && npm run package",
+    "submit": "node scripts/submit.mjs",
+    "version": "node scripts/sync-version.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0"
+  }
+}
