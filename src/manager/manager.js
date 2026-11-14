@@ -1,3 +1,4 @@
+import { readRecipe } from "../devtools/generator.js";
 import { $ } from "../shared/dom.js";
 import { timeAgo } from "../shared/format.js";
 import { applyScriptChanges, getLocal, getSession, readScripts } from "../shared/storage.js";
@@ -8,6 +9,8 @@ import { setupDialogs } from "./dialogs.js";
 import { templates } from "./templates.js";
 import { element, makeButton, openReview, review } from "./ui.js";
 import { setupUpdates } from "./updates-ui.js";
+
+$("#build-version").textContent = "v" + chrome.runtime.getManifest().version;
 
 const starter = `// ==UserScript==
 // @name        Highlight example heading
@@ -546,6 +549,9 @@ newButton.addEventListener("click", () => openTemplates());
 form.addEventListener("submit", event => {
   event.preventDefault();
   perform(async () => {
+    const original = scripts.find(item => item.id === selectedId);
+    if (original && readRecipe(original.source) && original.source !== source.value &&
+        !confirm("Save these JavaScript edits as a standalone script? This removes the visual recipe from this version.")) return;
     const { name, origins } = validate(source.value);
     const script = {
       id: selectedId ?? crypto.randomUUID(),

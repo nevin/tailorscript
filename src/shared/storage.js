@@ -39,14 +39,14 @@ function remember(scripts) {
   for (const script of scripts) stored.set(script.id, JSON.stringify(script));
 }
 
-/** @returns {Promise<Script[]>} */
-export async function readScripts() {
+/** @param {{ trackWrites?: boolean }} [options] @returns {Promise<Script[]>} */
+export async function readScripts({ trackWrites = !globalThis.document } = {}) {
   const { schemaVersion: version, scriptOrder = [], scripts } = await getLocal(["schemaVersion", "scriptOrder", "scripts"]);
   // Pages can open before the service worker finishes migrating, so read the old layout as it is.
   if (!version) return scripts ?? [];
   const records = await getLocal(scriptOrder.map(scriptKey));
   const result = scriptOrder.map(id => records[scriptKey(id)]).filter(Boolean);
-  remember(result);
+  if (trackWrites) remember(result);
   return result;
 }
 
@@ -54,13 +54,17 @@ export async function readScripts() {
 /** @param {Script[]} scripts @param {Partial<LocalStore>} [extra] */
 export async function writeScripts(scripts, extra = {}) {
   const items = { ...extra, schemaVersion, scriptOrder: scripts.map(script => script.id) };
+  const snapshots = new Map();
   for (const script of scripts) {
-    if (stored.get(script.id) !== JSON.stringify(script)) items[scriptKey(script.id)] = script;
+    const snapshot = JSON.stringify(script);
+    snapshots.set(script.id, snapshot);
+    if (stored.get(script.id) !== snapshot) items[scriptKey(script.id)] = script;
   }
-  const removed = [...stored.keys()].filter(id => !scripts.some(script => script.id === id));
+  const removed = [...stored.keys()].filter(id => !snapshots.has(id));
   await chrome.storage.local.set(items);
   if (removed.length) await chrome.storage.local.remove(removed.map(scriptKey));
-  remember(scripts);
+  stored.clear();
+  for (const [id, snapshot] of snapshots) stored.set(id, snapshot);
 }
 
 /** @returns {Promise<import("./types.js").Settings>} */

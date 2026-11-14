@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tailorscript Builder</title>
+  <link rel="stylesheet" href="panel.css">
+  <script type="module" src="panel.js"></script>
+</head>
+<body>
+  <header class="toolbar">
+    <h1 class="sr-only">Visual script builder</h1>
+    <div class="group">
+      <strong id="site"></strong>
+      <button id="scan" type="button" title="Look through the page again">Scan</button>
+      <button id="pick" type="button" title="Click an element on the page to add it">Pick on page</button>
+      <button id="selected" type="button" title="Add the element selected in the Elements panel">Use Elements selection</button>
+    </div>
+    <div class="group grow">
+      <label class="sr-only" for="saved">Recipe</label>
+      <select id="saved"><option value="">New recipe</option></select>
+      <label class="sr-only" for="name">Script name</label>
+      <input id="name" maxlength="100" value="Page customizations" placeholder="Script name">
+    </div>
+    <div class="group">
+      <button id="test" type="button" disabled title="Try the steps on the page without saving">Test</button>
+      <button id="undo" type="button" disabled>Undo test</button>
+      <button id="save-recipe" type="button" class="primary" disabled>Save</button>
+      <label class="check" id="enabled-label" hidden><input id="enabled" type="checkbox" role="switch"> On</label>
+      <button id="open-manager" type="button" hidden>Open in manager</button>
+    </div>
+  </header>
+  <div class="messages">
+    <p id="status" role="status"></p>
+    <p id="draft-state" role="status"></p>
+  </div>
+  <aside id="recovery" hidden aria-label="Draft recovery">
+    <p id="recovery-message"></p>
+    <div class="group">
+      <button id="resume-draft" type="button" class="primary">Resume draft</button>
+      <button id="discard-draft" type="button">Discard draft</button>
+    </div>
+  </aside>
+  <nav class="views" aria-label="Builder sections">
+    <button type="button" data-view="elements" aria-pressed="true">Elements</button>
+    <button type="button" data-view="recipe" aria-pressed="false">Steps <span id="step-count"></span></button>
+  </nav>
+  <main data-view="elements">
+    <section id="element-pane" aria-labelledby="element-title">
+      <h2 id="element-title">Page elements</h2>
+      <label class="sr-only" for="search">Find an element</label>
+      <input id="search" type="search" placeholder="Find by label, kind or selector">
+      <div id="elements"></div>
+    </section>
+    <section id="workspace" aria-labelledby="steps-title">
+      <h2 id="steps-title">Script steps</h2>
+      <div id="palette" role="group" aria-label="Actions"></div>
+      <p id="palette-help">Drag an element onto an action, or select an element and choose an action.</p>
+      <div class="step-navigation">
+        <p id="step-summary"></p>
+        <button id="next-issue" type="button" hidden>Go to next issue</button>
+      </div>
+      <ol id="steps"></ol>
+      <div id="empty-steps">
+        <strong>Drop an element here to start</strong>
+        <ol>
+          <li>Find the element on the left, or choose <b>Pick on page</b> and click it.</li>
+          <li>Drag it here, or onto an action above. Steps run from top to bottom.</li>
+          <li>Choose <b>Test</b> to try it on the page, then <b>Save</b>.</li>
+        </ol>
+      </div>
+      <div class="generation-options">
+        <label>Run on<select id="scope">
+          <option value="site">Every page on this site</option>
+          <option value="path">Only this page</option>
+        </select></label>
+        <label class="check"><input id="watch" type="checkbox"> Also change elements the page adds later</label>
+      </div>
+      <details id="code">
+        <summary>View code</summary>
+        <p id="preview-message" role="status"></p>
+        <ul id="summary"></ul>
+        <pre id="preview" tabindex="0" aria-label="Generated JavaScript"></pre>
+        <button id="copy" type="button" disabled>Copy code</button>
+      </details>
+    </section>
+  </main>
+</body>
+</html>

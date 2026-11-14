@@ -301,7 +301,7 @@ dialog::backdrop { background: #0b141680; backdrop-filter: blur(2px); }
 #review-content li > button + button { margin-left: 0; }
 #review-content details { width: 100%; }
 #review-content summary { cursor: pointer; font-weight: 600; }
-.template-list { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); }
+.template-list { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fill, minmax(min(14rem, 100%), 1fr)); }
 .template-list button { display: grid; justify-items: start; gap: .2rem; padding: .7rem .8rem; text-align: left; white-space: normal; }
 .template-list button:hover { background: var(--accent-soft); }
 .template-list span { font-size: .8rem; color: var(--muted); }
@@ -336,6 +336,9 @@ dialog::backdrop { background: #0b141680; backdrop-filter: blur(2px); }
 /* Narrow windows: stack the library above the editor */
 @media (max-width: 52rem) {
   .app-header { flex-wrap: wrap; padding: .6rem 1rem; }
+  .header-actions, .editor-actions { flex-wrap: wrap; }
+  .library-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .library-filters select { min-width: 0; }
   .header-actions .switch-label { margin-right: 0; }
   main { display: block; height: auto; }
   aside { border-right: 0; border-bottom: 1px solid var(--border); }
@@ -354,3 +357,5 @@ dialog::backdrop { background: #0b141680; backdrop-filter: blur(2px); }
 @media (prefers-reduced-motion: reduce) {
   .switch, .switch::after { transition: none; }
 }
+
+#build-version { color: var(--muted); font-size: .75rem; font-weight: 500; }

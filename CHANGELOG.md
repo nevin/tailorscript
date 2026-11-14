@@ -4,6 +4,20 @@ All notable changes to Tailorscript are recorded here. Versions follow [Semantic
 
 ## [Unreleased]
 
+## [0.7.0]
+
+- Added the DevTools visual builder, saved recipes, reversible previews, target checks and repair, and local draft recovery.
+- The builder fills the DevTools window with a one-row toolbar and two panes that scroll on their own, and shows one pane at a time when docked to the side. It follows the DevTools light or dark theme.
+- Drag an element onto an action, into a position in the step list, or drag steps to reorder them. Selecting an element and choosing an action, **Add**, and the arrow buttons do the same from the keyboard.
+- Elements are grouped by kind, named by what they are, told apart when they share a label, and outlined on the page as you point at them. **Pick on page** adds an element by clicking it.
+- New actions: click automatically, fill in a field, click with a keyboard shortcut, and a button in the Tailorscript popup. Buttons start as Click and fields as Fill in.
+- Repeated elements, such as each product's button, can be changed one at a time or all together.
+- Selectors use a link's address and the nearest named parent before falling back to position, and never a bare position that could match another page's element.
+- Step cards show the action, value and whether the element was found; the selector and checks are under Advanced. Test results appear on each step, text replacement can be tested and undone, and a test stays until you undo it.
+- The generated code is under **View code**, highlighted, with a plain summary of what it does. Saved recipes can be turned on, or opened in the manager, from the panel.
+- Show the installed version in the manager and check native popup layout on supported and restricted pages.
+- Improved registration performance and popup sizing.
+
 ## [0.6.0]
 
 ### Added

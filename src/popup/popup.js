@@ -20,16 +20,23 @@ const setup = $("#setup");
 const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 const url = /^https?:/.test(tab?.url ?? "") ? new URL(tab.url) : null;
 $("#page").textContent = url?.host ?? "This page can’t run userscripts";
-reload.disabled = !url;
-check.disabled = !url;
+reload.hidden = !url;
+check.hidden = !url;
 create.hidden = !url;
 find.hidden = !url;
 $("#install-banner").hidden = !isUserscriptUrl(tab?.url);
 let expanded;
 
 async function send(message) {
-  const response = await chrome.runtime.sendMessage(message);
-  if (!response?.ok) throw new Error(response?.error ?? "The script manager did not respond.");
+  const connectionError = "Tailorscript’s background worker didn’t answer. Close and reopen this popup. If it happens again, reload Tailorscript in chrome://extensions.";
+  let response;
+  try {
+    response = await chrome.runtime.sendMessage(message);
+  } catch (error) {
+    console.warn("Tailorscript popup message failed", message.type, error);
+    throw new Error(connectionError, { cause: error });
+  }
+  if (!response?.ok) throw new Error(response?.error ?? connectionError);
   return response.state;
 }
 
@@ -101,18 +108,26 @@ function renderScript(script, runs, menus, session, settings) {
   actions.append(
     button("Run now", () => act(async () => {
       await send({ type: "run-now", id: script.id, tabId: tab.id });
-    }, `Ran “${script.name}” on this page.`)),
+    }, `Sent “${script.name}” to this page.`)),
     button("Edit", () => openManager({ focusScript: script.id })),
     button(`Don’t run on ${url.hostname}`, () => act(async () => {
       if (!confirm(`Stop “${script.name}” from running on ${url.hostname}? This adds an @exclude-match line you can remove in the editor.`)) return false;
       await send({ type: "exclude-site", id: script.id, host: url.hostname });
       reload.dataset.suggested = "true";
     }, `“${script.name}” won’t run on ${url.hostname}. Reload to apply.`)));
-  const more = button("⋯", () => {
-    expanded = actions.hidden ? script.id : undefined;
-    for (const other of /** @type {NodeListOf<HTMLElement>} */ (list.querySelectorAll(".actions"))) other.hidden = other !== actions || !actions.hidden;
-    for (const other of list.querySelectorAll(".more")) other.setAttribute("aria-expanded", String(other === more && !actions.hidden));
-  }, "more");
+  function setActions(open) {
+    expanded = open ? script.id : undefined;
+    for (const other of /** @type {NodeListOf<HTMLElement>} */ (list.querySelectorAll(".actions"))) other.hidden = other !== actions || !open;
+    for (const other of list.querySelectorAll(".more")) other.setAttribute("aria-expanded", String(other === more && open));
+  }
+  const more = button("⋯", () => setActions(actions.hidden), "more");
+  item.addEventListener("keydown", event => {
+    if (event.key !== "Escape" || actions.hidden) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setActions(false);
+    more.focus();
+  });
   more.setAttribute("aria-label", `More actions for ${script.name}`);
   more.setAttribute("aria-expanded", String(!actions.hidden));
   more.setAttribute("aria-controls", actions.id);
@@ -137,10 +152,13 @@ function renderScript(script, runs, menus, session, settings) {
   return item;
 }
 
+let renderVersion = 0;
 async function render() {
+  const version = ++renderVersion;
   const [scripts, settings, session] = await Promise.all([
     readScripts(), readSettings(), getSession(["registrationState", "tabRuns"])
   ]);
+  if (version !== renderVersion) return;
   paused.checked = Boolean(settings.paused);
   setup.hidden = !session.registrationState?.setupNeeded;
   const tabState = session.tabRuns?.[tab?.id] ?? { scripts: {}, menus: {} };
@@ -218,7 +236,19 @@ $("#guide", HTMLButtonElement).addEventListener("click", async () => {
   await chrome.tabs.create({ url: chrome.runtime.getURL("guide/guide.html") });
   window.close();
 });
-chrome.storage.onChanged.addListener(render);
+let scheduledRender;
+chrome.storage.onChanged.addListener((changes, area) => {
+  const relevant = area === "local" ? Object.keys(changes).some(key =>
+    ["settings", "scripts", "scriptOrder", "schemaVersion"].includes(key) || key.startsWith("script:"))
+    : area === "session" && (changes.registrationState ||
+      (changes.tabRuns && JSON.stringify(changes.tabRuns.oldValue?.[tab?.id]) !==
+        JSON.stringify(changes.tabRuns.newValue?.[tab?.id])));
+  if (!relevant || scheduledRender) return;
+  scheduledRender = requestAnimationFrame(() => {
+    scheduledRender = undefined;
+    render().catch(error => { notice.textContent = error.message; });
+  });
+});
 
 await render();
 // The setup card reflects the last registration attempt, so retry in case Allow User Scripts was just turned on.

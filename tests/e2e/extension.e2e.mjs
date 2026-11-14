@@ -208,3 +208,166 @@ test("the scripting guide opens and hands an example to the manager", async () =
   assert.match(text, /GM\.setValue\("visits"/);
   await guide.close();
 });
+
+test("toolbar popup can change settings through the worker", async () => {
+  const page = await openPage();
+  await page.bringToFront();
+  await manager.evaluate(() => chrome.action.openPopup());
+  const target = await browser.waitForTarget(item => item.url().endsWith("/popup/popup.html"), { timeout: 5000 });
+  const popup = await target.asPage();
+  try {
+    await popup.waitForFunction(() => document.querySelector("#page").textContent.startsWith("localhost:"));
+    await popup.click("#paused");
+    await popup.waitForFunction(() => document.querySelector("#notice").textContent.startsWith("Scripts are paused."));
+    await popup.click("#paused");
+    await popup.waitForFunction(() => document.querySelector("#notice").textContent.startsWith("Scripts resumed."));
+  } finally {
+    await popup.close();
+    await page.close();
+  }
+});
+
+test("visual recipe can be previewed, saved, reopened and applied after reload", async () => {
+  const page = await openPage();
+  const panel = await browser.newPage();
+  const session = await page.createCDPSession();
+  // Drive the panel in Chrome and relay inspectedWindow.eval into the fixture tab.
+  await panel.exposeFunction("inspectFixture", async expression => {
+    const result = await session.send("Runtime.evaluate", { expression, returnByValue: true });
+    return { value: result.result.value, error: Boolean(result.exceptionDetails) };
+  });
+  await panel.evaluateOnNewDocument(() => {
+    chrome.devtools = {
+      inspectedWindow: {
+        eval(expression, callback) {
+          globalThis.inspectFixture(expression).then(({ value, error }) => callback(value, error));
+        }
+      },
+      network: { onNavigated: { addListener() {} } }
+    };
+  });
+  try {
+    await panel.goto(`chrome-extension://${extensionId}/devtools/panel.html`);
+    await panel.type("#search", "Test page");
+    await panel.waitForFunction(() => [...document.querySelectorAll("#elements .item-label")]
+      .some(element => element.textContent === "Test page"));
+    assert.match(await panel.$eval("#elements h3", heading => heading.textContent), /^Headings · 1$/);
+    await panel.evaluate(() => {
+      const heading = [...document.querySelectorAll("#elements .item")]
+        .find(row => row.querySelector(".item-label").textContent === "Test page");
+      heading.querySelector(".add").click();
+    });
+    await panel.waitForFunction(async () => {
+      const key = "builderDraft:" + [...document.querySelectorAll("#site")].map(element => "http://" + element.textContent)[0];
+      return Boolean((await chrome.storage.local.get(key))[key]);
+    });
+    await panel.reload();
+    await panel.waitForSelector("#resume-draft", { visible: true });
+    await panel.click("#resume-draft");
+    await panel.waitForSelector("#steps .step", { visible: true });
+    assert.equal(await panel.$eval("#steps .step-action select", select => select.value), "hide");
+    await panel.click("#test");
+    await panel.waitForFunction(() => document.querySelector("#steps .test-result").textContent.includes("Changed 1"));
+    assert.equal(await page.$eval("h1", element => getComputedStyle(element).display), "none");
+    await panel.click("#undo");
+    await panel.waitForFunction(() => document.querySelector("#status").textContent === "Test undone.");
+    assert.equal(await page.$eval("h1", element => getComputedStyle(element).display), "block");
+
+    await page.evaluate(() => document.body.append(document.createElement("h1")));
+    await panel.click("#test");
+    await panel.waitForFunction(() => document.querySelector("#steps .test-result").textContent.includes("expected 1 match(es), found 2"));
+    assert.equal(await page.$eval("h1", element => getComputedStyle(element).display), "block");
+    await panel.click("#undo");
+
+    await panel.click("#save-recipe");
+    await panel.waitForFunction(() => document.querySelector("#saved").value !== "");
+    const id = await panel.$eval("#saved", select => select.value);
+    await panel.reload();
+    await panel.waitForFunction(id => [...document.querySelector("#saved").options].some(option => option.value === id), {}, id);
+    await panel.select("#saved", id);
+    await panel.waitForFunction(() => document.querySelector(".target-status").textContent.includes("found 2"));
+    await panel.$eval("#steps .advanced button", button => button.click());
+    await panel.waitForFunction(() => document.querySelector("#status").textContent.startsWith("Click the new element"));
+    await page.evaluate(() => {
+      const heading = document.querySelector("h1");
+      heading.dataset.testid = "main-heading";
+      heading.click();
+    });
+    await panel.waitForFunction(() => document.querySelector("#steps .target-field input").value.includes("main-heading"));
+    await panel.waitForFunction(() => document.querySelector(".target-status").textContent.startsWith("Found on this page"));
+    // Use the original stable selector for the reload assertion: the fixture changes above were in-memory only.
+    await panel.$eval("#steps .target-field input", input => {
+      input.value = "h1";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await panel.select("#steps select", "font");
+    await panel.click("#save-recipe");
+    await panel.waitForFunction(() => document.querySelector("#status").textContent.startsWith("Saved"));
+    await send({ type: "toggle", id, enabled: true });
+    await page.reload();
+    await page.waitForFunction(() => getComputedStyle(document.querySelector("h1")).fontSize === "18px");
+  } finally {
+    await panel.close();
+    await page.close();
+  }
+});
+
+test("popup actions wrap and Escape returns focus to More actions", async () => {
+  const source = header("Popup layout", ["match http://localhost/*"]) + "void 0;";
+  await send({ type: "save", id: "popup-layout", script: { source, enabled: false }, expected: null });
+  const page = await openPage();
+  await page.bringToFront();
+  await manager.evaluate(() => chrome.action.openPopup());
+  const target = await browser.waitForTarget(item => item.url().endsWith("/popup/popup.html"), { timeout: 5000 });
+  const popup = await target.asPage();
+  try {
+    await popup.waitForSelector(".more");
+    await popup.click(".more");
+    const action = "#scripts > li:first-child .actions button:last-child";
+    await popup.$eval(action, button => {
+      button.textContent = "Don’t run on " + "long-subdomain".repeat(15) + ".example.com";
+    });
+    assert.ok(await popup.$eval(action, button => button.scrollWidth <= button.clientWidth + 1));
+    await popup.focus(action);
+    await popup.keyboard.press("Escape");
+    assert.equal(await popup.$eval(".more", button => button.getAttribute("aria-expanded")), "false");
+    assert.ok(await popup.$eval(".more", button => document.activeElement === button));
+  } finally {
+    await popup.close();
+    await page.close();
+  }
+});
+
+test("native toolbar popup keeps its width and aligns the pause control", async () => {
+  for (const restricted of [false, true]) {
+    const page = restricted ? await browser.newPage() : await openPage();
+    if (restricted) await page.goto("chrome://version");
+    await page.bringToFront();
+    await manager.evaluate(() => chrome.action.openPopup());
+    const target = await browser.waitForTarget(item => item.url().endsWith("/popup/popup.html"), { timeout: 5000 });
+    const popup = await target.asPage();
+    try {
+      await popup.waitForFunction(restricted => {
+        const title = document.querySelector("#page").textContent;
+        return restricted ? title.includes("can’t run") : title.startsWith("localhost:");
+      }, {}, restricted);
+      const layout = await popup.evaluate(() => {
+        const header = document.querySelector("header").getBoundingClientRect();
+        const title = document.querySelector("h1").getBoundingClientRect();
+        const pause = document.querySelector("#pause-label").getBoundingClientRect();
+        return {
+          width: innerWidth, overflow: document.documentElement.scrollWidth > innerWidth,
+          aligned: Math.abs(title.top + title.bottom - pause.top - pause.bottom) < 2,
+          padding: header.right - pause.right,
+          reloadHidden: document.querySelector("#reload").hidden, checkHidden: document.querySelector("#check").hidden
+        };
+      });
+      assert.ok(layout.width >= 280 && !layout.overflow && layout.aligned && layout.padding >= 10, JSON.stringify(layout));
+      assert.equal(layout.reloadHidden, restricted);
+      assert.equal(layout.checkHidden, restricted);
+    } finally {
+      await popup.close();
+      await page.close();
+    }
+  }
+});

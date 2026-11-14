@@ -6,11 +6,15 @@ import { enableMessaging, injectionFor } from "./registration.js";
 export async function runNow({ id, tabId }) {
   const script = (await readScripts()).find(item => item.id === id);
   if (!script) throw new Error("This script no longer exists.");
+  const execute = chrome.userScripts?.execute;
+  if (!execute) throw new Error("Turn on Allow User Scripts in Tailorscript’s extension details, then try again.");
   const { metadata, js, world, worldId } = await injectionFor(script);
   if (worldId) await enableMessaging(worldId);
-  await chrome.userScripts.execute({
+  const results = await chrome.userScripts.execute({
     target: { tabId, allFrames: metadata.allFrames }, js, world, ...(worldId ? { worldId } : {}), injectImmediately: true
   });
+  const failure = results?.find(result => result.error);
+  if (failure) throw new Error(failure.error);
   return getSession("registrationState").then(({ registrationState }) => registrationState);
 }
 
@@ -35,4 +39,17 @@ export async function runMenuCommand({ tabId, id, commandId }) {
   const command = tabRuns[tabId]?.menus?.[id]?.find(item => item.commandId === commandId);
   if (!command) throw new Error("This command is no longer available. Reload the page.");
   await callInPage({ tabId, documentId: command.documentId, frameId: command.frameId }, id, "menu", commandId);
+}
+
+// Brings the manager to the front with a script selected, for pages such as the DevTools panel that can't open tabs.
+export async function openManager({ id }) {
+  const url = chrome.runtime.getURL("manager/index.html");
+  if (id) await chrome.storage.session.set({ focusScript: id });
+  const [existing] = await chrome.tabs.query({ url });
+  if (!existing) {
+    await chrome.tabs.create({ url });
+    return;
+  }
+  await chrome.tabs.update(existing.id, { active: true });
+  await chrome.windows?.update(existing.windowId, { focused: true });
 }

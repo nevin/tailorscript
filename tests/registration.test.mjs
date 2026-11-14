@@ -27,7 +27,18 @@ test("keeps registrations in library order", async () => {
   mock.calls.length = 0;
   await syncScripts([b, a, c]);
   assert.deepEqual(mock.calls.filter(([name]) => name !== "configureWorld").map(call => call.join(":")),
-    ["update:B", "update:A", "register:C"]);
+    ["register:C"]);
+});
+
+test("reconciliation updates changed code and leaves identical registrations alone", async () => {
+  const mock = installChrome();
+  const script = { id: "a", enabled: true, source: "// ==UserScript==\n// @match https://a.com/*\n// ==/UserScript==\nvoid 0;" };
+  await syncScripts([script]);
+  mock.calls.length = 0;
+  await syncScripts([script]);
+  assert.ok(!mock.calls.some(([name]) => ["update", "register", "unregister"].includes(name)));
+  await syncScripts([{ ...script, source: script.source.replace("void 0", "void 1") }]);
+  assert.deepEqual(mock.calls.filter(([name]) => name === "update").map(([, id]) => id), ["a"]);
 });
 
 test("pausing unregisters everything and missing access is reported", async () => {

@@ -8,10 +8,10 @@ import { enqueue, ignore } from "./queue.js";
 import {
   abortRequest, notificationClicked, notificationClosed, recordMenu, recordRun, scriptHandlers, tabLoading, tabRemoved
 } from "./script-bridge.js";
-import { runMenuCommand, runNow } from "./tab-actions.js";
+import { openManager, runMenuCommand, runNow } from "./tab-actions.js";
 import { checkUpdates, scheduleUpdates } from "./update-check.js";
 
-const extensionPages = ["manager/index.html", "popup/popup.html", "install/install.html"].map(path => chrome.runtime.getURL(path));
+const extensionPages = ["manager/index.html", "popup/popup.html", "install/install.html", "devtools/panel.html"].map(path => chrome.runtime.getURL(path));
 
 // Every queued operation waits for the storage upgrade, so nothing reads the library half-migrated.
 const migrated = migrate().catch(error => console.error(`Storage upgrade failed: ${error.message}`));
@@ -58,7 +58,8 @@ const direct = {
   "check-updates": ({ id }) => checkUpdates(id ? [id] : null, { manual: true }),
   "run-now": runNow,
   "menu-run": runMenuCommand,
-  diagnostics: collectDiagnostics
+  diagnostics: collectDiagnostics,
+  "open-manager": openManager
 };
 
 // Saving or deleting compares against the copy the editor loaded, so one tab can't overwrite another's changes.

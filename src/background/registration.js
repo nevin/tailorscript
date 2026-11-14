@@ -100,6 +100,24 @@ async function resetUnusedWorlds(api, used) {
   }
 }
 
+// Chrome may omit empty lists or report default values for optional fields.
+function sameList(before = [], after = []) {
+  return before.length === after.length && before.every((value, index) => value === after[index]);
+}
+
+function sameRegistration(before, after) {
+  return (before.world ?? "USER_SCRIPT") === after.world &&
+    before.worldId === after.worldId &&
+    (before.runAt ?? "document_idle") === after.runAt &&
+    Boolean(before.allFrames) === after.allFrames &&
+    sameList(before.matches, after.matches) &&
+    sameList(before.excludeMatches, after.excludeMatches) &&
+    sameList(before.includeGlobs, after.includeGlobs) &&
+    sameList(before.excludeGlobs, after.excludeGlobs) &&
+    before.js?.length === after.js.length &&
+    before.js.every((part, index) => part.code === after.js[index].code && part.file === after.js[index].file);
+}
+
 export async function syncScripts(scripts, settings = {}) {
   const issues = Object.create(null);
   const manual = [];
@@ -153,11 +171,12 @@ export async function syncScripts(scripts, settings = {}) {
 
   // Chrome injects scripts with the same timing in registration order, so a reordered library re-registers everything.
   // update() keeps fields it isn't given, so dropping globs or changing worlds also needs a fresh registration.
-  const desired = registrations.map(({ id }) => id);
-  const kept = current.filter(({ id }) => desired.includes(id));
-  const inOrder = kept.map(({ id }) => id).join("\n") === desired.slice(0, kept.length).join("\n");
+  const desired = new Map(registrations.map(registration => [registration.id, registration]));
+  const previous = new Map(current.map(registration => [registration.id, registration]));
+  const kept = current.filter(({ id }) => desired.has(id));
+  const inOrder = kept.every(({ id }, index) => id === registrations[index].id);
   const reshaped = kept.some(old => {
-    const next = registrations.find(({ id }) => id === old.id);
+    const next = desired.get(old.id);
     return (old.world ?? "USER_SCRIPT") !== next.world || (old.includeGlobs?.length && !next.includeGlobs) ||
       (old.excludeGlobs?.length && !next.excludeGlobs);
   });
@@ -176,8 +195,8 @@ export async function syncScripts(scripts, settings = {}) {
   for (const registration of registrations) {
     try {
       if (registration.worldId) await enableMessaging(registration.worldId);
-      if (registered.has(registration.id)) await api.update([registration]);
-      else await api.register([registration]);
+      if (!registered.has(registration.id)) await api.register([registration]);
+      else if (!sameRegistration(previous.get(registration.id), registration)) await api.update([registration]);
       active.push(registration.id);
     } catch (error) {
       issues[registration.id] = error.message;

@@ -26,7 +26,8 @@ export const pageMessages = {
   "check-updates": { id: "string?" },
   "run-now": { id, tabId: "number" },
   "menu-run": { id, tabId: "number", commandId: "string" },
-  diagnostics: {}
+  diagnostics: {},
+  "open-manager": { id: "string?" }
 };
 
 // From userscripts, through the USER_SCRIPT world's messaging. Each also carries the script's id and its token,

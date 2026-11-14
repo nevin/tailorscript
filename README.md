@@ -30,6 +30,7 @@ src/                 The extension, loadable as-is
   popup/             Toolbar popup
   install/           Install page for .user.js links
   guide/             Scripting guide: userscript basics and each GM API with an example
+  devtools/          Visual builder shown as a DevTools tab: page scanner, recipe steps and script generator
   shared/            Metadata parsing, validation, storage and sync backup used by every page
   icons/             Logo sources (SVG) and the PNG sizes Chrome needs
   vendor/acorn/      Vendored JavaScript parser (MIT)
@@ -74,6 +75,12 @@ The toolbar badge counts the scripts that ran on the current tab and turns red w
 Commands that scripts add with `GM_registerMenuCommand` appear under the script. **Find scripts for this site** searches Greasy Fork. If the tab shows a `.user.js` file, the popup offers to install it. **Pause all** (or the keyboard shortcut, Alt+Shift+P by default) stops every script on new page loads; the badge shows "off" while paused.
 
 If Chrome's **Allow User Scripts** switch is off, the popup and manager say so and link to the extension's details page.
+
+## Build a script without writing code
+
+Open the page's developer tools (right-click, **Inspect**) and choose the **Tailorscript** tab. The builder lists the page's buttons, fields, links, headings, images, sections and pinned bars; pointing at one outlines it on the page, and **Pick on page** lets you click the element instead.
+
+Drag an element onto an action (Hide, Click, Fill in, Replace text, colours, font size, Outline, Add note, Shortcut, Popup button) or into the step list, or select it and choose the action. Steps run from top to bottom and can be dragged to reorder. For repeated elements, such as every product's button, a step can change one or all of them. **Test** tries the steps on the page and **Undo test** puts it back. **Save** stores the recipe as a script, which you can turn on from the panel; **View code** shows what was generated. Editing that code in the manager turns it into an ordinary script.
 
 ## Learn to write scripts
 
