@@ -1,21 +1,5 @@
 :root {
-  color-scheme: light dark;
   font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
-  --bg: light-dark(#f4f7f7, #0f1719);
-  --surface: light-dark(#ffffff, #162024);
-  --surface-2: light-dark(#eef3f3, #1c292d);
-  --border: light-dark(#dde5e6, #2b3a3f);
-  --border-strong: light-dark(#c6d2d4, #3c4f55);
-  --text: light-dark(#14201f, #e8efee);
-  --muted: light-dark(#5a6b6e, #9db0b3);
-  --accent: light-dark(#0a7066, #6fd3c4);
-  --accent-soft: light-dark(#e1f2ef, #163a36);
-  --on-accent: light-dark(#ffffff, #062723);
-  --success: light-dark(#13795b, #6fd3a0);
-  --warning: light-dark(#8a5300, #f2c26b);
-  --warning-soft: light-dark(#fff4dc, #3a2d12);
-  --danger: light-dark(#b42318, #ff9c92);
-  --danger-soft: light-dark(#fdeceb, #40201d);
   --editor-font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 * { box-sizing: border-box; }

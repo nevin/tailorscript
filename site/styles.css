@@ -1,3 +1,4 @@
+/* The colour tokens copy src/shared/tokens.css, since this site is published on its own. Keep them in step. */
 :root {
   color-scheme: light dark;
   font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;

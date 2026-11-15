@@ -1,0 +1,38 @@
+/* Colours and shapes shared by every Tailorscript page, in light and dark. Each page's own stylesheet loads after
+   this one and may rename or override a token (the popup's background, the DevTools panel's names), but the
+   values live here so the pages can't drift apart. site/styles.css keeps its own copy because it is published
+   separately; keep it in step. */
+:root {
+  color-scheme: light dark;
+
+  --bg: light-dark(#f4f7f7, #0f1719);
+  --surface: light-dark(#ffffff, #162024);
+  --surface-2: light-dark(#eef3f3, #1c292d);
+  --border: light-dark(#dde5e6, #2b3a3f);
+  --border-strong: light-dark(#c6d2d4, #3c4f55);
+  --text: light-dark(#14201f, #e8efee);
+  --muted: light-dark(#5a6b6e, #9db0b3);
+  --accent: light-dark(#0a7066, #6fd3c4);
+  --accent-soft: light-dark(#e1f2ef, #163a36);
+  --on-accent: light-dark(#ffffff, #062723);
+  --success: light-dark(#13795b, #6fd3a0);
+  --warning: light-dark(#8a5300, #f2c26b);
+  --warning-soft: light-dark(#fff4dc, #3a2d12);
+  --danger: light-dark(#b42318, #ff9c92);
+  --danger-soft: light-dark(#fdeceb, #40201d);
+  --gold: #f6bd4a;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --syntax-keyword: light-dark(#5c3cc0, #c3adff);
+  --syntax-string: light-dark(#a3401d, #ffb38a);
+  --syntax-number: light-dark(#0f5f8f, #86d0ff);
+  --syntax-comment: light-dark(#5f7a68, #8fae99);
+  --syntax-function: light-dark(#0a6a7a, #7fd8e8);
+  --syntax-definition: light-dark(#14201f, #f2f7f6);
+  --syntax-property: light-dark(#2c4f8a, #a9c6ff);
+  --syntax-type: light-dark(#8a5300, #f2c26b);
+  --syntax-punctuation: light-dark(#5a6b6e, #9db0b3);
+}

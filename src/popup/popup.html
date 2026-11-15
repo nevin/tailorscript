@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <title>Tailorscript</title>
   <link rel="icon" href="../icons/logo.svg">
+  <link rel="stylesheet" href="../shared/tokens.css">
   <link rel="stylesheet" href="popup.css">
   <script type="module" src="popup.js"></script>
 </head>
@@ -40,10 +41,16 @@
   <footer>
     <button id="create" type="button" class="primary">+ New script for this site</button>
     <div class="links">
-      <button id="find" type="button" class="link">Find scripts for this site</button>
-      <button id="check" type="button" class="link">Check this page</button>
-      <button id="guide" type="button" class="link">Scripting guide</button>
+      <button id="find" type="button" class="link" title="Search Greasy Fork for scripts others shared for this site">Find scripts</button>
       <button id="manager" type="button" class="link">Open manager</button>
+      <details class="footer-menu">
+        <summary class="link">More</summary>
+        <div class="footer-menu-items">
+          <button id="check" type="button">Check this page</button>
+          <button id="builder" type="button">Build a script without code</button>
+          <button id="guide" type="button">Scripting guide</button>
+        </div>
+      </details>
     </div>
   </footer>
 </body>

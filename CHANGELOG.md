@@ -17,6 +17,10 @@ All notable changes to Tailorscript are recorded here. Versions follow [Semantic
 - The generated code is under **View code**, highlighted, with a plain summary of what it does. Saved recipes can be turned on, or opened in the manager, from the panel.
 - Show the installed version in the manager and check native popup layout on supported and restricted pages.
 - Improved registration performance and popup sizing.
+- The manager welcomes a new user with ways to start: a template, the visual builder, a shared link or a backup. The template picker and the popup's **More** menu explain how to open the visual builder.
+- Library rows show where each script runs and only mention its status when there is something to say. **Checked page** appears once a page has been checked.
+- The popup no longer marks every script with a warning before a reload: the Reload button says **Reload to apply** instead. Less-used links moved into **More**.
+- All pages share one set of colour tokens, so the DevTools panel now matches the rest. Template cards line up their text, and narrow windows keep the Save and Find hints.
 
 ## [0.6.0]
 

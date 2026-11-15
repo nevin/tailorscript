@@ -31,7 +31,7 @@ src/                 The extension, loadable as-is
   install/           Install page for .user.js links
   guide/             Scripting guide: userscript basics and each GM API with an example
   devtools/          Visual builder shown as a DevTools tab: page scanner, recipe steps and script generator
-  shared/            Metadata parsing, validation, storage and sync backup used by every page
+  shared/            Metadata parsing, validation, storage, sync backup and the colour tokens (tokens.css) used by every page
   icons/             Logo sources (SVG) and the PNG sizes Chrome needs
   vendor/acorn/      Vendored JavaScript parser (MIT)
   vendor/codemirror/ Vendored CodeMirror 6 editor bundle (MIT), rebuilt with npm run vendor
@@ -72,7 +72,7 @@ The toolbar badge counts the scripts that ran on the current tab and turns red w
 - **Edit**: open it in the manager.
 - **Don't run on this site**: add an `@exclude-match` line for the current site.
 
-Commands that scripts add with `GM_registerMenuCommand` appear under the script. **Find scripts for this site** searches Greasy Fork. If the tab shows a `.user.js` file, the popup offers to install it. **Pause all** (or the keyboard shortcut, Alt+Shift+P by default) stops every script on new page loads; the badge shows "off" while paused.
+Commands that scripts add with `GM_registerMenuCommand` appear under the script. **Find scripts** searches Greasy Fork for the site, and **More** has Check this page, how to open the visual builder, and the scripting guide. After you turn a script on, the Reload button changes to **Reload to apply**. If the tab shows a `.user.js` file, the popup offers to install it. **Pause all** (or the keyboard shortcut, Alt+Shift+P by default) stops every script on new page loads; the badge shows "off" while paused.
 
 If Chrome's **Allow User Scripts** switch is off, the popup and manager say so and link to the extension's details page.
 

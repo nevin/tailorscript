@@ -58,7 +58,19 @@ function runText(script, run, state, settings) {
   if (run?.error) return [`Error${run.error.line ? ` on line ${run.error.line}` : ""}: ${run.error.message}`, "error"];
   if (run) return [`Ran ${timeAgo(run.at)}`, "ran"];
   if (script.pendingUpdate) return [`Update to v${script.pendingUpdate.version} is waiting for review`, "warning"];
-  return ["Not run on this page yet. Reload to apply.", "warning"];
+  return ["Hasn’t run on this page yet", "pending"];
+}
+
+// Messages are warnings unless they say otherwise.
+function tell(text, kind = "warning") {
+  notice.textContent = text;
+  notice.dataset.kind = kind;
+}
+
+// The Reload button stands out whenever the page needs reloading for a change to show.
+function suggestReload() {
+  reload.dataset.suggested = "true";
+  reload.textContent = "Reload to apply";
 }
 
 function button(label, action, className) {
@@ -71,11 +83,11 @@ function button(label, action, className) {
 }
 
 function act(operation, done) {
-  notice.textContent = "";
+  tell("");
   operation().then(result => {
-    if (done && result !== false) notice.textContent = done;
+    if (done && result !== false) tell(done, "info");
   }, error => {
-    notice.textContent = error.message;
+    tell(error.message);
   });
 }
 
@@ -113,7 +125,7 @@ function renderScript(script, runs, menus, session, settings) {
     button(`Don’t run on ${url.hostname}`, () => act(async () => {
       if (!confirm(`Stop “${script.name}” from running on ${url.hostname}? This adds an @exclude-match line you can remove in the editor.`)) return false;
       await send({ type: "exclude-site", id: script.id, host: url.hostname });
-      reload.dataset.suggested = "true";
+      suggestReload();
     }, `“${script.name}” won’t run on ${url.hostname}. Reload to apply.`)));
   function setActions(open) {
     expanded = open ? script.id : undefined;
@@ -172,10 +184,12 @@ async function render() {
   emptyText.textContent = !url ? "Userscripts run only on HTTP and HTTPS pages."
     : `Nothing runs on ${url.host} yet. Write one, or find scripts others have shared.`;
   list.replaceChildren(...matching.map(script => renderScript(script, runs, menus, session, settings)));
+  // Scripts that are on but haven't run here usually just need the page reloaded, so say that once, on the button.
+  if (list.querySelector('.run[data-state="pending"]')) suggestReload();
 }
 
 async function setEnabled(script, toggle) {
-  notice.textContent = "";
+  tell("");
   try {
     const { origins } = parseSource(script.source);
     if (toggle.checked && !await chrome.permissions.contains({ origins })) {
@@ -186,27 +200,27 @@ async function setEnabled(script, toggle) {
       await chrome.storage.session.remove("pendingEnable");
       if (!granted) {
         toggle.checked = false;
-        notice.textContent = "Site access was declined, so the script stays off.";
+        tell("Site access was declined, so the script stays off.");
         return;
       }
     }
     await send({ type: "toggle", id: script.id, enabled: toggle.checked });
-    notice.textContent = "Reload the tab to apply this change.";
-    reload.dataset.suggested = "true";
+    tell("Reload the tab to apply this change.", "info");
+    suggestReload();
   } catch (error) {
     toggle.checked = !toggle.checked;
-    notice.textContent = error.message;
+    tell(error.message);
   }
 }
 
 paused.addEventListener("change", async () => {
   try {
     await send({ type: "settings", patch: { paused: paused.checked } });
-    notice.textContent = paused.checked ? "Scripts are paused. Reload tabs to stop running ones." : "Scripts resumed. Reload to apply.";
-    reload.dataset.suggested = "true";
+    tell(paused.checked ? "Scripts are paused. Reload tabs to stop running ones." : "Scripts resumed. Reload to apply.", "info");
+    suggestReload();
   } catch (error) {
     paused.checked = !paused.checked;
-    notice.textContent = error.message;
+    tell(error.message);
   }
 });
 chrome.commands?.getAll().then(commands => {
@@ -232,6 +246,12 @@ find.addEventListener("click", async () => {
 check.addEventListener("click", () => openManager({ diagnosticUrl: url.href, showDiagnostics: Date.now() }));
 create.addEventListener("click", () => openManager({ newScriptSite: `${url.origin}/*` }));
 $("#manager", HTMLButtonElement).addEventListener("click", () => openManager());
+const footerMenu = $(".footer-menu", HTMLDetailsElement);
+$("#builder", HTMLButtonElement).addEventListener("click", () => {
+  footerMenu.open = false;
+  tell("Right-click the page and choose Inspect, then open the Tailorscript tab in the developer tools (it may be under »). " +
+    "Drag parts of the page onto actions such as Hide or Click, then Test and Save.", "info");
+});
 $("#guide", HTMLButtonElement).addEventListener("click", async () => {
   await chrome.tabs.create({ url: chrome.runtime.getURL("guide/guide.html") });
   window.close();
@@ -246,7 +266,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (!relevant || scheduledRender) return;
   scheduledRender = requestAnimationFrame(() => {
     scheduledRender = undefined;
-    render().catch(error => { notice.textContent = error.message; });
+    render().catch(error => { tell(error.message); });
   });
 });
 

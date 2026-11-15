@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tailorscript</title>
   <link rel="icon" href="../icons/logo.svg">
+  <link rel="stylesheet" href="../shared/tokens.css">
   <link rel="stylesheet" href="manager.css">
   <script type="module" src="manager.js"></script>
 </head>
@@ -60,7 +61,7 @@
         <label><input type="radio" name="filter" value="enabled"> On</label>
         <label><input type="radio" name="filter" value="disabled"> Off</label>
         <label><input type="radio" name="filter" value="attention"> Issues</label>
-        <label><input type="radio" name="filter" value="page"> Checked page</label>
+        <label id="page-filter" hidden><input type="radio" name="filter" value="page"> Checked page</label>
       </div>
       <div class="library-filters">
         <label class="sr-only" for="tag">Tag</label>
@@ -74,6 +75,17 @@
       </div>
       <div id="scripts"></div>
       <p id="library-empty"></p>
+      <div id="welcome" hidden>
+        <h3>Make the web work your way</h3>
+        <p>Tailorscript runs small scripts that change how websites look and behave. Pick a way to start:</p>
+        <div class="start-list">
+          <button id="welcome-template" type="button"><strong>Start from a template</strong><span>Hide clutter, add styles, click buttons and more.</span></button>
+          <button id="welcome-builder" type="button"><strong>Build one without code</strong><span>Point at parts of a page in the browser’s developer tools.</span></button>
+          <button id="welcome-install" type="button"><strong>Install from a link</strong><span>Use a script someone shared, after reviewing it.</span></button>
+          <button id="welcome-import" type="button"><strong>Import a backup</strong><span>Bring back scripts you exported before.</span></button>
+        </div>
+        <p class="welcome-guide">New to this? <a href="../guide/guide.html" target="tailorscript-guide">Read the scripting guide</a>.</p>
+      </div>
       <p id="backup-state"></p>
     </aside>
     <form aria-labelledby="script-title">
@@ -120,8 +132,9 @@
       <div class="editor" id="editor"></div>
       <div class="status-bar">
         <button id="validation" type="button" aria-live="polite"></button>
-        <span id="editor-help"><kbd data-shortcut="S"></kbd> Save <kbd data-shortcut="F"></kbd> Find
-          <kbd>Ctrl+Space</kbd> Suggest <kbd data-shortcut="/"></kbd> Comment <kbd>F8</kbd> Next problem</span>
+        <span id="editor-help"><span><kbd data-shortcut="S"></kbd> Save</span> <span><kbd data-shortcut="F"></kbd> Find</span>
+          <span class="extra"><kbd>Ctrl+Space</kbd> Suggest</span> <span class="extra"><kbd data-shortcut="/"></kbd> Comment</span>
+          <span class="extra"><kbd>F8</kbd> Next problem</span></span>
         <span id="cursor-position"></span>
       </div>
       <p id="status" role="status"></p>

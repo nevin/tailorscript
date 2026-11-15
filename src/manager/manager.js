@@ -66,6 +66,9 @@ const filter = {
 const tagFilter = $("#tag", HTMLSelectElement);
 const sort = $("#sort", HTMLSelectElement);
 const empty = $("#library-empty");
+const welcome = $("#welcome");
+const library = $("aside");
+const pageFilter = $("#page-filter");
 const title = $("#script-title");
 const draftState = $("#draft-state");
 const scriptState = $("#script-state");
@@ -239,6 +242,17 @@ function scriptStatus(script) {
   return { pill: "Active", detail: summary ? summary.text : "Active · hasn’t run yet", state: "ready" };
 }
 
+// Where a script runs, in a few words: its sites, or "All sites".
+function siteSummary(metadata) {
+  if (!metadata) return "";
+  const hosts = [...new Set(metadata.matches.map(pattern => {
+    const host = pattern.match(/^[^:]+:\/\/([^/]+)/)?.[1] ?? pattern;
+    return host === "*" ? "" : host.replace(/^\*\./, "");
+  }))];
+  if (!hosts.length || hosts.includes("")) return "All sites";
+  return hosts.length > 2 ? `${hosts.slice(0, 2).join(", ")} +${hosts.length - 2} more` : hosts.join(", ");
+}
+
 function checkedPage() {
   try {
     const url = new URL(diagnosticUrl.value.trim());
@@ -274,8 +288,10 @@ function renderLibrary() {
   });
   if (sort.value === "name") visible.sort((a, b) => a.script.name.localeCompare(b.script.name));
   if (sort.value === "recent") visible.sort((a, b) => (b.script.updatedAt ?? 0) - (a.script.updatedAt ?? 0));
-  empty.textContent = visible.length ? ""
-    : !scripts.length ? "Create a script or import one to get started."
+  library.classList.toggle("is-empty", !scripts.length);
+  welcome.hidden = scripts.length > 0;
+  pageFilter.hidden = !page && filter.value !== "page";
+  empty.textContent = visible.length || !scripts.length ? ""
     : filter.value === "page" && !page ? "Enter a page under Check a page to filter by it."
     : "No scripts match these filters.";
   list.replaceChildren(...visible.map(({ script, metadata }) => {
@@ -292,10 +308,14 @@ function renderLibrary() {
     const button = document.createElement("button");
     button.type = "button";
     const status = scriptStatus(script);
-    const state = element("span", status.detail, "script-state");
-    state.dataset.state = status.state;
     const meta = element("span", undefined, "script-meta");
-    meta.append(state);
+    // "Active" is the usual case, so the row only says so when there is something more to tell.
+    if (status.detail !== "Active · hasn’t run yet") {
+      const state = element("span", status.detail, "script-state");
+      state.dataset.state = status.state;
+      meta.append(state);
+    }
+    meta.append(element("span", siteSummary(metadata), "script-sites"));
     if (script.pendingUpdate) meta.append(element("span", "Update available", "script-update"));
     if (metadata?.tags.length) meta.append(element("span", metadata.tags.map(tag => `#${tag}`).join(" "), "script-tags"));
     button.append(element("span", script.name, "script-name"), meta);
@@ -540,9 +560,12 @@ function openTemplates(site) {
     button.append(element("strong", template.name), element("span", template.description));
     choices.append(button);
   }
+  const builder = makeButton("", () => showBuilderHelp(() => openTemplates(site)));
+  builder.className = "builder-callout";
+  builder.append(element("strong", "Build one without code"), element("span", "Point at parts of the page in the browser’s developer tools and choose what to do with them."));
   const help = element("p", "New to userscripts? ", "template-help");
   help.append(guideLink("Read the scripting guide"), ", which explains the header, the GM APIs and has an example for each.");
-  openReview(host ? `New script for ${host}` : "Start a new script", choices, help);
+  openReview(host ? `New script for ${host}` : "Start a new script", choices, builder, help);
 }
 newButton.addEventListener("click", () => openTemplates());
 
@@ -634,7 +657,7 @@ document.addEventListener("keydown", event => {
 
 diagnosticUrl.addEventListener("input", () => {
   renderDiagnostics();
-  if (filter.value === "page") renderLibrary();
+  renderLibrary();
 });
 
 $("#open-extension-settings", HTMLButtonElement).addEventListener("click", () => {
@@ -644,6 +667,26 @@ $("#open-extension-settings", HTMLButtonElement).addEventListener("click", () =>
 window.addEventListener("focus", () => {
   if (registrationState?.setupNeeded && !busy) perform(() => send({ type: "sync" }));
 });
+
+// The visual builder lives in the page's developer tools, which an extension can't open, so this explains the way there.
+function showBuilderHelp(back) {
+  const steps = element("ol", undefined, "builder-steps");
+  for (const text of [
+    "Open the website you want to change.",
+    "Right-click the page and choose Inspect. The developer tools open beside or below the page.",
+    "Choose the Tailorscript tab at the top of the developer tools. If you don’t see it, it may be under the » button.",
+    "Drag the parts of the page you want to change onto an action, such as Hide or Click.",
+    "Choose Test to try it, then Save. Turn the script On to run it every time you visit."
+  ]) steps.append(element("li", text));
+  const actions = element("div", undefined, "dialog-actions");
+  if (back) actions.append(makeButton("Back", back));
+  actions.append(makeButton("Got it", () => review.close()));
+  openReview("Build a script without code", steps, actions);
+}
+$("#welcome-template", HTMLButtonElement).addEventListener("click", () => openTemplates());
+$("#welcome-builder", HTMLButtonElement).addEventListener("click", () => showBuilderHelp());
+$("#welcome-install", HTMLButtonElement).addEventListener("click", () => $("#install-url", HTMLButtonElement).click());
+$("#welcome-import", HTMLButtonElement).addEventListener("click", () => $("#import", HTMLButtonElement).click());
 
 // The scripting guide opens in one tab that later links reuse.
 function guideLink(text, anchor = "") {

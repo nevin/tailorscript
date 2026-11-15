@@ -1,21 +1,8 @@
 :root {
-  color-scheme: light dark;
   font: 12px/1.45 system-ui, sans-serif;
-  --surface: light-dark(#fff, #20292b);
-  --canvas: light-dark(#f3f7f6, #141c1e);
-  --border: light-dark(#cddad9, #536360);
-  --accent: light-dark(#09665a, #a2e3d7);
-  --accent-soft: light-dark(#e1f2ef, #1d3f3a);
-  --muted: light-dark(#50615f, #b8c8c5);
-  --warning: light-dark(#854f09, #f2c883);
-  --danger: light-dark(#b42318, #ff9c92);
-  --danger-soft: light-dark(#fdeceb, #40201d);
+  /* The panel's names for the shared tokens in shared/tokens.css. */
+  --canvas: var(--bg);
   --space: .6rem;
-  --syntax-keyword: light-dark(#5c3cc0, #c3adff);
-  --syntax-string: light-dark(#a3401d, #ffb38a);
-  --syntax-number: light-dark(#0f5f8f, #86d0ff);
-  --syntax-comment: light-dark(#5f7a68, #8fae99);
-  --syntax-function: light-dark(#0a6a7a, #7fd8e8);
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -82,7 +69,7 @@ main > section { min-width: 0; min-height: 0; overflow: auto; padding: var(--spa
 .item .tag { flex: none; font-size: .85em; color: var(--warning); }
 .item-row .add { min-height: 1.6rem; padding: 0 .5rem; }
 .item-detail { display: grid; gap: .3rem; padding: 0 .5rem .45rem; }
-.item-detail code { font-family: ui-monospace, monospace; color: var(--muted); overflow-wrap: anywhere; }
+.item-detail code { font-family: var(--mono); color: var(--muted); overflow-wrap: anywhere; }
 .item-detail .warn { color: var(--warning); }
 .empty { padding: .5rem; color: var(--muted); }
 
@@ -123,7 +110,7 @@ main > section { min-width: 0; min-height: 0; overflow: auto; padding: var(--spa
 .advanced label { display: grid; gap: .2rem; }
 .advanced .target-field { grid-column: 1 / -1; }
 .advanced input { width: 100%; }
-.target-field input { font-family: ui-monospace, monospace; }
+.target-field input { font-family: var(--mono); }
 .selector-message:empty { display: none; }
 .selector-message { color: var(--danger); }
 
@@ -135,7 +122,7 @@ main > section { min-width: 0; min-height: 0; overflow: auto; padding: var(--spa
 #summary { padding-left: 1.2rem; margin-bottom: .4rem; }
 #preview {
   margin: 0 0 .4rem; padding: .6rem; max-height: 24rem; overflow: auto; tab-size: 2; white-space: pre-wrap; overflow-wrap: anywhere;
-  font: 11px/1.5 ui-monospace, monospace; background: var(--surface); border: 1px solid var(--border); border-radius: .4rem;
+  font: 11px/1.5 var(--mono); background: var(--surface); border: 1px solid var(--border); border-radius: .4rem;
 }
 #preview:empty { display: none; }
 .tok-comment { color: var(--syntax-comment); font-style: italic; }
