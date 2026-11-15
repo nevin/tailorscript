@@ -6,21 +6,23 @@ All notable changes to Tailorscript are recorded here. Versions follow [Semantic
 
 ## [0.7.0]
 
-- Added the DevTools visual builder, saved recipes, reversible previews, target checks and repair, and local draft recovery.
-- The builder fills the DevTools window with a one-row toolbar and two panes that scroll on their own, and shows one pane at a time when docked to the side. It follows the DevTools light or dark theme.
-- Drag an element onto an action, into a position in the step list, or drag steps to reorder them. Selecting an element and choosing an action, **Add**, and the arrow buttons do the same from the keyboard.
-- Elements are grouped by kind, named by what they are, told apart when they share a label, and outlined on the page as you point at them. **Pick on page** adds an element by clicking it.
-- New actions: click automatically, fill in a field, click with a keyboard shortcut, and a button in the Tailorscript popup. Buttons start as Click and fields as Fill in.
-- Repeated elements, such as each product's button, can be changed one at a time or all together.
-- Selectors use a link's address and the nearest named parent before falling back to position, and never a bare position that could match another page's element.
-- Step cards show the action, value and whether the element was found; the selector and checks are under Advanced. Test results appear on each step, text replacement can be tested and undone, and a test stays until you undo it.
-- The generated code is under **View code**, highlighted, with a plain summary of what it does. Saved recipes can be turned on, or opened in the manager, from the panel.
-- Show the installed version in the manager and check native popup layout on supported and restricted pages.
-- Improved registration performance and popup sizing.
-- The manager welcomes a new user with ways to start: a template, the visual builder, a shared link or a backup. The template picker and the popup's **More** menu explain how to open the visual builder.
-- Library rows show where each script runs and only mention its status when there is something to say. **Checked page** appears once a page has been checked.
-- The popup no longer marks every script with a warning before a reload: the Reload button says **Reload to apply** instead. Less-used links moved into **More**.
-- All pages share one set of colour tokens, so the DevTools panel now matches the rest. Template cards line up their text, and narrow windows keep the Save and Find hints.
+### Added
+- Visual script builder: a **Tailorscript** tab in the page's developer tools that builds a script without code. It lists the page's elements by kind, outlines them as you point at them, and **Pick on page** adds one by clicking it.
+- Drag an element onto an action or into the step list, and drag steps to reorder them. **Add**, the action buttons and the arrow buttons do the same from the keyboard.
+- Actions: hide, click automatically, fill in a field, replace text, text and background colour, font size, outline, add a note, click with a keyboard shortcut, and a button in the Tailorscript popup. Repeated elements, such as each product's button, can be changed one at a time or all together.
+- **Test** runs the steps on the page and undoes them afterwards, with a result on each step. **View code** shows the generated script and a plain summary. Recipes can be saved, reopened, turned on and opened in the manager from the panel, and unsaved work is kept per site.
+- A welcome panel for new users with ways to start: a template, the visual builder, a shared link or a backup. The template picker and the popup's **More** menu explain how to open the visual builder.
+- The manager shows the installed version.
+
+### Changed
+- Library rows show where each script runs and mention its status only when there is something to say. **Checked page** appears once a page has been checked.
+- The popup no longer marks every script with a warning before a reload; the Reload button says **Reload to apply** instead. Less-used links moved into **More**.
+- All pages share one set of colour tokens.
+- Registration skips scripts that haven't changed, and Run now reports errors from the page.
+
+### Fixed
+- Template cards in the new-script picker line up their text.
+- Narrow manager windows keep the Save and Find hints, and the popup keeps its width on restricted pages.
 
 ## [0.6.0]
 
