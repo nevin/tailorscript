@@ -115,13 +115,14 @@ function evaluate(expression) {
   });
 }
 
-// Outlines a selector's matches on the page a moment after the pointer settles; null clears the outline.
+// Outlines what an element or step targets a moment after the pointer settles; null clears the outline.
 let highlightTimer;
-function highlightSoon(selector) {
+function highlightSoon(target) {
   clearTimeout(highlightTimer);
+  const argument = target ? { selector: target.selector, text: target.text } : null;
   highlightTimer = setTimeout(() => {
-    if (!activePick) inspect("highlight", JSON.stringify(selector ?? null)).catch(() => {});
-  }, selector ? 80 : 150);
+    if (!activePick) inspect("highlight", JSON.stringify(argument)).catch(() => {});
+  }, target ? 80 : 150);
 }
 
 /* Drafts: unsaved work is kept per site so closing DevTools doesn't lose it. */
@@ -214,9 +215,10 @@ function add(item, { action, index = steps.length, group = false } = {}) {
   draftPage ||= page;
   const everyone = group && item.group;
   const step = {
-    selector: everyone ? item.group.selector : item.selector, label: item.label, action: action ?? defaultAction(item.kind),
+    selector: everyone ? item.group.selector : item.selector, text: everyone ? undefined : item.text,
+    label: item.label, action: action ?? defaultAction(item.kind),
     values: {}, all: Boolean(everyone), valid: true, expectedCount: everyone ? undefined : 1, tag: item.tag,
-    one: item.selector, group: item.group ?? undefined, plain: item.plain
+    one: item.selector, oneText: item.text, group: item.group ?? undefined, plain: item.plain
   };
   steps.splice(index, 0, step);
   renderSteps();
@@ -233,7 +235,7 @@ function renderItem(item) {
   const row = make("li", "item");
   const positional = item.basis === "Position-based";
   const label = button(item.label, () => select(item), "item-label");
-  label.title = item.selector;
+  label.title = item.text ? `${item.selector} with the text “${item.text}”` : item.selector;
   label.setAttribute("aria-expanded", String(selectedItem === item));
   const head = make("div", "item-row", label);
   if (positional) head.append(make("span", "tag", "by position"));
@@ -246,6 +248,7 @@ function renderItem(item) {
     const detail = make("div", "item-detail", make("code", "", item.selector),
       make("span", positional ? "warn" : "", positional
         ? "Found by its position on the page, so it may stop matching if the layout changes."
+        : item.text ? `Found by its text, “${item.text}”, so it keeps working if the layout changes.`
         : `Found by its ${item.basis.toLowerCase()}.`));
     if (item.group) detail.append(button(`Add all ${item.group.count} like this`, () => add(item, { group: true })));
     row.append(detail);
@@ -258,9 +261,9 @@ function renderItem(item) {
     workspace.classList.add("dragging");
   });
   row.addEventListener("dragend", clearDrag);
-  row.addEventListener("mouseenter", () => highlightSoon(item.selector));
+  row.addEventListener("mouseenter", () => highlightSoon(item));
   row.addEventListener("mouseleave", () => highlightSoon(null));
-  row.addEventListener("focusin", () => highlightSoon(item.selector));
+  row.addEventListener("focusin", () => highlightSoon(item));
   return row;
 }
 
@@ -282,8 +285,8 @@ function renderElements() {
 function recipe() {
   return {
     version: blankRecipe.version, name: name.value, page: draftPage, scope: scope.value, watch: watch.checked,
-    steps: steps.map(({ selector, label, action, values, all, expectedCount, tag, one, group, plain }) => ({
-      selector, label, action, value: values[action], all, expectedCount, tag, one, group, plain
+    steps: steps.map(({ selector, text, label, action, values, all, expectedCount, tag, one, oneText, group, plain }) => ({
+      selector, text, label, action, value: values[action], all, expectedCount, tag, one, oneText, group, plain
     }))
   };
 }
@@ -360,7 +363,7 @@ function diagnoseSteps() {
   }
   diagnosticTimer = setTimeout(async () => {
     try {
-      const targets = steps.map(({ selector, expectedCount, tag, all }) => ({ selector, expectedCount, tag, all }));
+      const targets = steps.map(({ selector, text, expectedCount, tag, all }) => ({ selector, text, expectedCount, tag, all }));
       const messages = await inspect("diagnose", JSON.stringify(targets));
       if (version !== diagnosticVersion) return;
       messages.forEach((message, index) => {
@@ -436,7 +439,7 @@ function pickReplacement(step) {
   return pickElement("Click the new element on the page.", result => {
     if (!steps.includes(step)) return;
     Object.assign(step, {
-      selector: result.selector, one: result.selector, group: result.group ?? undefined, plain: undefined, tag: result.tag, label: result.label,
+      selector: result.selector, text: result.text, one: result.selector, oneText: result.text, group: result.group ?? undefined, plain: undefined, tag: result.tag, label: result.label,
       valid: true, all: false, expectedCount: 1
     });
     renderSteps();
@@ -556,7 +559,7 @@ function renderStep(step, index) {
     which.addEventListener("change", () => {
       const everyone = which.value === "group";
       Object.assign(step, {
-        selector: everyone ? step.group.selector : step.one, all: everyone, expectedCount: everyone ? undefined : 1,
+        selector: everyone ? step.group.selector : step.one, text: everyone ? undefined : step.oneText, all: everyone, expectedCount: everyone ? undefined : 1,
         valid: true
       });
       renderSteps();
@@ -603,18 +606,26 @@ function renderStep(step, index) {
     step.tag = tag.value.trim().toLowerCase() || undefined;
     refreshPreview();
   });
+  const textField = document.createElement("input");
+  textField.placeholder = "Any text";
+  textField.value = step.text ?? "";
+  textField.addEventListener("input", () => {
+    step.text = textField.value.replace(/\s+/g, " ").trim() || undefined;
+    refreshPreview();
+  });
   const advanced = document.createElement("details");
   advanced.open = Boolean(step.advancedOpen) || !step.valid;
   advanced.addEventListener("toggle", () => { step.advancedOpen = advanced.open; });
   advanced.append(make("summary", "", "Advanced"), make("div", "advanced",
     make("label", "target-field", "CSS selector", selector, selectorMessage),
+    make("label", "target-field", "Only elements with exactly this text", textField),
     make("label", "", "Skip unless this many match", count),
     make("label", "", "Skip unless the element is a", tag),
     make("label", "check", all, "Change every match"),
     button("Change element…", () => pickReplacement(step).catch(report))));
 
   row.append(head, action, problem, target, result, advanced);
-  row.addEventListener("mouseenter", () => { if (step.valid) highlightSoon(step.selector); });
+  row.addEventListener("mouseenter", () => { if (step.valid) highlightSoon(step); });
   row.addEventListener("mouseleave", () => highlightSoon(null));
   return row;
 }
@@ -770,8 +781,13 @@ function load(script, recovered) {
   steps.splice(0, steps.length, ...(data?.steps ?? []).map(step => ({
     ...step, values: { [step.action]: step.value }, valid: validSelector(step.selector)
   })));
-  baseline = recovered ? JSON.stringify(stored ?? blankRecipe) : JSON.stringify(recipe());
+  // An upgraded recipe from the first builder counts as unsaved, so Save writes it in the current format.
+  baseline = recovered ? JSON.stringify(stored ?? blankRecipe) : stored?.upgraded ? "" : JSON.stringify(recipe());
   renderSteps();
+  if (!recovered && stored?.upgraded) {
+    say("This recipe was made with an earlier version of the builder. Save it to update it; " +
+      "any changes made to its code by hand will be replaced.", "info");
+  }
 }
 
 saved.addEventListener("change", () => {

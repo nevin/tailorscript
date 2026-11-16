@@ -19,6 +19,46 @@ export function installRuntime(config) {
   }
   if (allowed("unsafeWindow")) define("unsafeWindow", window);
 
+  // GM_addElement(tag, attributes) or GM_addElement(parent, tag, attributes): adds an element and returns it.
+  if (allowed("addElement")) {
+    const addElement = (...args) => {
+      const [parent, tag, attributes] = typeof args[0] === "string" ? [null, args[0], args[1]] : args;
+      const node = document.createElement(String(tag));
+      for (const [name, value] of Object.entries(attributes ?? {})) {
+        if (name === "textContent" || name === "innerText") node.textContent = String(value);
+        else node.setAttribute(name, String(value));
+      }
+      const head = ["script", "style", "link", "meta"].includes(node.localName);
+      (parent ?? (head ? document.head : document.body) ?? document.documentElement).append(node);
+      return node;
+    };
+    define("GM_addElement", addElement);
+    api.addElement = async (...args) => addElement(...args);
+  }
+  if (allowed("log")) {
+    const log = (...args) => console.log(`[${config.info.script.name}]`, ...args);
+    define("GM_log", log);
+    api.log = async (...args) => log(...args);
+  }
+  // window.onurlchange: an urlchange event whenever a single-page app changes the address without loading a page.
+  if (allowed("urlChange")) {
+    const page = /** @type {any} */ (window);
+    let last = location.href;
+    const check = () => {
+      if (location.href === last) return;
+      last = location.href;
+      const event = Object.assign(new Event("urlchange"), { url: last });
+      if (typeof page.onurlchange === "function") page.onurlchange(event);
+      dispatchEvent(event);
+    };
+    // Scripts test for this property to see whether the manager supports urlchange events.
+    if (!("onurlchange" in page)) page.onurlchange = null;
+    globalThis.navigation?.addEventListener("currententrychange", () => setTimeout(check));
+    addEventListener("popstate", check);
+    addEventListener("hashchange", check);
+    setInterval(check, 500);
+  }
+
   // Scripts injected into the page have no extension messaging, so they get only the APIs above.
   if (config.page) {
     define("GM", Object.freeze(api));
@@ -60,25 +100,75 @@ export function installRuntime(config) {
   // GM_getValue and friends are synchronous, so they read a snapshot taken when the script was registered.
   const cache = config.values;
   const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+  // Change listeners hear about changes this script makes on this page; changes from other tabs aren't reported.
+  const listeners = new Map();
+  const changed = (key, before, after) => {
+    for (const listener of listeners.values()) {
+      if (listener.key !== key) continue;
+      try {
+        listener.callback(key, clone(before), clone(after), false);
+      } catch (error) {
+        warn(error);
+      }
+    }
+  };
   const valueOp = async (op, key, value) => {
+    const before = cache && op !== "get" && op !== "list" ? cache[key] : undefined;
     if (cache && op === "set") cache[key] = clone(value);
     if (cache && op === "delete") delete cache[key];
+    if (listeners.size && (op === "set" || op === "delete")) changed(key, before, op === "set" ? value : undefined);
     return call("value", { op, key, value });
   };
+  // The batch functions take a list of keys, or an object of keys and fallback values for getValues.
+  const keysOf = spec => Array.isArray(spec) ? spec.map(String) : Object.keys(spec ?? {});
+  const fallbackOf = (spec, key) => Array.isArray(spec) ? undefined : spec?.[key];
   if (allowed("getValue")) {
     api.getValue = async (key, fallback) => {
       const result = await valueOp("get", key);
       return result === undefined ? fallback : result;
     };
     if (cache) define("GM_getValue", (key, fallback) => key in cache ? clone(cache[key]) : fallback);
+    api.getValues = async spec => {
+      const result = {};
+      for (const key of keysOf(spec)) {
+        const value = await api.getValue(key, fallbackOf(spec, key));
+        if (value !== undefined) result[key] = value;
+      }
+      return result;
+    };
+    if (cache) {
+      define("GM_getValues", spec => Object.fromEntries(keysOf(spec)
+        .map(key => [key, key in cache ? clone(cache[key]) : fallbackOf(spec, key)]).filter(([, value]) => value !== undefined)));
+    }
   }
   if (allowed("setValue")) {
     api.setValue = async (key, value) => { await valueOp("set", key, value); };
     if (cache) define("GM_setValue", (key, value) => { valueOp("set", key, value).catch(warn); });
+    api.setValues = async values => {
+      for (const [key, value] of Object.entries(values ?? {})) await valueOp("set", key, value);
+    };
+    if (cache) define("GM_setValues", values => { api.setValues(values).catch(warn); });
   }
   if (allowed("deleteValue")) {
     api.deleteValue = async key => { await valueOp("delete", key); };
     if (cache) define("GM_deleteValue", key => { valueOp("delete", key).catch(warn); });
+    api.deleteValues = async keys => {
+      for (const key of keysOf(keys)) await valueOp("delete", key);
+    };
+    if (cache) define("GM_deleteValues", keys => { api.deleteValues(keys).catch(warn); });
+  }
+  if (allowed("valueListener")) {
+    let next = 0;
+    const add = (key, callback) => {
+      const id = String(++next);
+      listeners.set(id, { key: String(key), callback });
+      return id;
+    };
+    const remove = id => { listeners.delete(String(id)); };
+    define("GM_addValueChangeListener", add);
+    define("GM_removeValueChangeListener", remove);
+    api.addValueChangeListener = async (key, callback) => add(key, callback);
+    api.removeValueChangeListener = async id => remove(id);
   }
   if (allowed("listValues")) {
     api.listValues = () => valueOp("list");
@@ -92,7 +182,8 @@ export function installRuntime(config) {
   };
   const fromBase64 = text => Uint8Array.from(atob(text), char => char.charCodeAt(0));
 
-  if (allowed("xhr")) {
+  let request;
+  if (allowed("xhr") || allowed("download")) {
     const encodeBody = async data => {
       if (data == null) return null;
       if (typeof data === "string") return { text: data };
@@ -138,7 +229,7 @@ export function installRuntime(config) {
       });
       return response;
     };
-    const request = details => {
+    request = details => {
       const requestId = uniqueId();
       let aborted = false;
       const fire = (name, value) => {
@@ -182,6 +273,8 @@ export function installRuntime(config) {
         }
       };
     };
+  }
+  if (allowed("xhr")) {
     define("GM_xmlhttpRequest", details => {
       const { promise, abort } = request(details);
       promise.catch(() => {});
@@ -190,6 +283,48 @@ export function installRuntime(config) {
     api.xmlHttpRequest = details => {
       const { promise, abort } = request(details);
       return Object.assign(promise, { abort });
+    };
+  }
+
+  // GM_download(url, name) or GM_download({ url, name, headers, onload, onerror }): fetches like GM_xmlhttpRequest,
+  // so other sites need @connect, then saves the file through a download link.
+  if (allowed("download")) {
+    const download = (details, name) => {
+      const options = typeof details === "string" ? { url: details, name } : details ?? {};
+      const { promise, abort } = request({ url: options.url, headers: options.headers, responseType: "blob", timeout: options.timeout });
+      const saved = promise.then(response => {
+        if (response.status >= 400) throw new Error(`The download failed with HTTP ${response.status}.`);
+        const href = URL.createObjectURL(response.response);
+        const link = document.createElement("a");
+        link.href = href;
+        link.download = options.name || decodeURIComponent(new URL(options.url, location.href).pathname.split("/").pop() || "") || "download";
+        document.documentElement.append(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(href), 60_000);
+        try {
+          options.onload?.({ url: options.url });
+        } catch (error) {
+          warn(error);
+        }
+      }, error => {
+        try {
+          options.onerror?.({ error: "not_succeeded", details: error.message });
+        } catch (callbackError) {
+          warn(callbackError);
+        }
+        throw error;
+      });
+      return { saved, abort };
+    };
+    define("GM_download", (details, name) => {
+      const { saved, abort } = download(details, name);
+      saved.catch(() => {});
+      return { abort };
+    });
+    api.download = (details, name) => {
+      const { saved, abort } = download(details, name);
+      return Object.assign(saved, { abort });
     };
   }
 

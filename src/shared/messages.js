@@ -10,7 +10,7 @@ export const pageMessages = {
   sync: {},
   save: { id, script: { source: "string", enabled: "boolean" }, expected },
   install: { id: "string?", source: "string", url: "string", enabled: "boolean?", autoUpdate: "boolean?" },
-  import: { entries: [{ source: "string", history: "array?", replace: "string?" }] },
+  import: { entries: [{ source: "string", history: "array?", replace: "string?", values: "object?", enabled: "boolean?" }] },
   "apply-update": { id },
   "dismiss-update": { id },
   "auto-update": { id, enabled: "boolean" },

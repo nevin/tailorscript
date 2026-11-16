@@ -18,8 +18,11 @@ function element(tag, className, ...children) {
   return node;
 }
 
+// Examples can be wider than the page, so each one can take focus and be scrolled with the keyboard.
 function code(source) {
-  return element("pre", "code", ...highlight(source).map(({ text, kind }) => kind ? element("span", `tok-${kind}`, text) : text));
+  const block = element("pre", "code", ...highlight(source).map(({ text, kind }) => kind ? element("span", `tok-${kind}`, text) : text));
+  block.tabIndex = 0;
+  return block;
 }
 
 function button(label, action, className) {

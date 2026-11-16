@@ -6,9 +6,11 @@ import { formatDiagnostics } from "../shared/diagnostics.js";
 import { installOrigins, installPageUrl } from "../shared/install.js";
 import { readScripts, readValues } from "../shared/storage.js";
 import { readSyncBackup } from "../shared/sync-backup.js";
+import { parseSource } from "../shared/userscript.js";
 import { decodeImport } from "./backup-file.js";
+import { decodeImportFile, headerValues } from "./import-formats.js";
 import { diffView } from "./diff.js";
-import { element, makeButton, openReview, review, switchControl } from "./ui.js";
+import { bulletList, element, makeButton, openReview, review, switchControl } from "./ui.js";
 
 export function setupDialogs(app) {
   const importFile = $("#import-file", HTMLInputElement);
@@ -22,43 +24,87 @@ export function setupDialogs(app) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  function reviewImport(entries, origin) {
+  // Shows what an import will add or replace, with what changed in converting scripts from another manager.
+  // entries come from import-formats.js; manager names where they came from.
+  function reviewImport(entries, origin, manager = "Tailorscript") {
     const rows = element("ul", undefined, "import-list");
-    const choices = entries.map(entry => {
-      const identical = app.scripts.find(script => script.source === entry.source);
-      const sameName = app.scripts.find(script => script.name === entry.name);
+    const parsed = entries.map(entry => {
+      try {
+        return { ...entry, meta: parseSource(entry.source) };
+      } catch (error) {
+        return { ...entry, error: error.message };
+      }
+    });
+    const choices = parsed.map(entry => {
       const item = element("li");
+      if (entry.error) {
+        item.append(element("strong", headerValues(entry.source, "name")[0] || "Unnamed script"),
+          element("span", `Can’t be imported: ${entry.error}`, "import-note warning-item"));
+        rows.append(item);
+        return null;
+      }
+      const { meta } = entry;
+      const identical = app.scripts.find(script => script.source === entry.source);
+      const sameName = app.scripts.find(script => script.name === meta.name);
       const choice = document.createElement("select");
       choice.append(new Option("Add as a new script", "new"));
-      if (!identical && sameName) choice.append(new Option(`Replace “${sameName.name}” (disables it for review)`, sameName.id));
+      if (!identical && sameName) choice.append(new Option(`Replace “${sameName.name}”`, sameName.id));
       choice.append(new Option("Skip", "skip"));
       choice.value = identical ? "skip" : "new";
-      choice.setAttribute("aria-label", `Import action for ${entry.name}`);
-      item.append(element("strong", entry.name),
-        element("span", ` — ${[...entry.matches, ...entry.includes].join(", ")}${entry.excludeMatches.length + entry.excludes.length
-          ? `; excludes ${[...entry.excludeMatches, ...entry.excludes].join(", ")}` : ""}`),
-        element("span", identical ? "Identical to a script in your library." : sameName ? "A script with this name already exists." : "", "import-note"),
-        choice);
+      choice.setAttribute("aria-label", `Import action for ${meta.name}`);
+      const sites = [...meta.matches, ...meta.includes];
+      const notes = [...(entry.notes ?? [])];
+      if (meta.unsupportedGrants.length) {
+        notes.push(`Uses ${meta.unsupportedGrants.join(", ")}, which Tailorscript doesn’t have, so the parts that need ${meta.unsupportedGrants.length === 1 ? "it" : "them"} won’t work.`);
+      }
+      const valueCount = Object.keys(entry.values ?? {}).length;
+      if (valueCount) notes.push(`Brings ${valueCount} stored ${valueCount === 1 ? "value" : "values"} with it.`);
+      if (entry.wasEnabled === false) notes.push(`Was off in ${manager}.`);
+      item.append(element("strong", meta.name),
+        element("span", ` — ${sites.join(", ") || "no sites"}${meta.excludeMatches.length + meta.excludes.length
+          ? `; excludes ${[...meta.excludeMatches, ...meta.excludes].join(", ")}` : ""}`),
+        element("span", identical ? "Identical to a script in your library." : sameName ? "A script with this name already exists." : "", "import-note"));
+      if (notes.length) item.append(bulletList(notes.map(text => ({ text, warning: text.startsWith("Uses ") }))));
+      item.append(choice);
       rows.append(item);
       return choice;
     });
-    openReview(`Review import from ${origin}`, element("p", "Imported scripts start disabled so you can review them."), rows,
-      makeButton("Import selected", () => {
-        const chosen = entries.flatMap(({ source, history }, index) => {
-          const action = choices[index].value;
-          return action === "skip" ? [] : [{ source, history, ...(action === "new" ? {} : { replace: action }) }];
+    const runnable = parsed.filter(entry => !entry.error && entry.wasEnabled);
+    const turnOn = document.createElement("input");
+    turnOn.type = "checkbox";
+    turnOn.checked = runnable.length > 0;
+    const turnOnLabel = element("label", undefined, "import-turn-on");
+    turnOnLabel.append(turnOn, ` Turn on the ${runnable.length === 1 ? "script" : `${runnable.length} scripts`} that ${runnable.length === 1 ? "was" : "were"} on in ${manager}. Chrome asks to allow ${runnable.length === 1 ? "its" : "their"} sites.`);
+    const intro = element("p", runnable.length ? "Other imported scripts start off, so you can review them first."
+      : "Imported scripts start off so you can review them first.");
+    openReview(`Review import from ${origin}`, intro, ...(runnable.length ? [turnOnLabel] : []), rows,
+      Object.assign(makeButton("Import selected", () => {
+        const chosen = parsed.flatMap((entry, index) => {
+          const action = choices[index]?.value ?? "skip";
+          if (action === "skip") return [];
+          return [{
+            source: entry.source, history: entry.history ?? [], ...(entry.values ? { values: entry.values } : {}),
+            enabled: Boolean(turnOn.checked && entry.wasEnabled), ...(action === "new" ? {} : { replace: action })
+          }];
         });
         review.close();
         if (!chosen.length) return;
+        // Chrome only shows its site-access prompt in direct response to a click, so it is asked before anything else.
+        const origins = [...new Set(chosen.filter(entry => entry.enabled).flatMap(entry => parseSource(entry.source).origins))];
+        const access = origins.length ? chrome.permissions.request({ origins }) : Promise.resolve(true);
         app.perform(async () => {
+          if (!await access) for (const entry of chosen) entry.enabled = false;
           await app.send({ type: "import", entries: chosen });
           await app.reloadData();
           const replacedSelected = chosen.some(entry => entry.replace === app.selectedId);
           if (replacedSelected && !app.isDirty()) app.select(app.scripts.find(item => item.id === app.selectedId));
-          app.status.textContent = `Imported ${chosen.length} disabled script(s).` +
+          const on = chosen.filter(entry => entry.enabled).length;
+          app.status.textContent = `Imported ${chosen.length} ${chosen.length === 1 ? "script" : "scripts"}` +
+            (on ? `, ${on} turned on. Reload pages to run ${on === 1 ? "it" : "them"}.` : ", turned off for review.") +
+            (origins.length && !on ? " Site access was declined, so nothing was turned on." : "") +
             (replacedSelected && app.isDirty() ? " The open script was replaced; reload it before saving." : "");
         });
-      }));
+      }), { className: "primary" }));
   }
 
   function showHistory() {
@@ -240,7 +286,8 @@ export function setupDialogs(app) {
       element("p", settings.lastExportAt ? `Last exported ${new Date(settings.lastExportAt).toLocaleString()}.` : "You haven’t exported a backup file yet."),
       makeButton("Restore from Chrome sync", () => app.perform(async () => {
         const { text, savedAt } = await readSyncBackup();
-        reviewImport(decodeImport(text, true), `Chrome sync (${new Date(savedAt).toLocaleString()})`);
+        reviewImport(decodeImport(text, true).map(({ source, history }) => ({ source, history, notes: [] })),
+          `Chrome sync (${new Date(savedAt).toLocaleString()})`);
       })), support);
   }
 
@@ -284,7 +331,8 @@ export function setupDialogs(app) {
     importFile.value = "";
     if (!file) return;
     app.perform(async () => {
-      reviewImport(decodeImport(await file.text(), file.name.toLowerCase().endsWith(".json")), file.name);
+      const { manager, entries } = await decodeImportFile(file.name, new Uint8Array(await file.arrayBuffer()));
+      reviewImport(entries, file.name, manager);
     });
   });
   $("#history", HTMLButtonElement).addEventListener("click", showHistory);

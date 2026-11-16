@@ -17,7 +17,7 @@ Tailorscript lets you change how websites look and behave by running your own Ja
 - Install scripts from Greasy Fork, OpenUserJS, GitHub or any .user.js link after reviewing what they do, and keep them updated. Updates that need new access wait for your review.
 - Use @require libraries and the familiar GM APIs: requests to other sites, menu commands, notifications, clipboard, stored values and more.
 - Run a script once from the toolbar, stop it on one site, or pause everything with a keyboard shortcut.
-- Back up to a file or to Chrome sync, and import scripts with a review step. Imported scripts start disabled.
+- Back up to a file or to Chrome sync, and import scripts with a review step, including backups from Tampermonkey and Violentmonkey with their settings and stored values.
 
 Tailorscript runs only scripts you write or choose to install. It has no servers and sends your data nowhere.
 

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Welcome · Tailorscript</title>
+  <link rel="icon" href="../icons/logo.svg">
+  <link rel="stylesheet" href="../shared/tokens.css">
+  <link rel="stylesheet" href="welcome.css">
+  <script type="module" src="welcome.js"></script>
+</head>
+<body>
+  <!-- Text comes from _locales through data-i18n; see shared/i18n.js. -->
+  <main>
+    <h1><img src="../icons/logo.svg" alt="" width="40" height="40"><span data-i18n="welcomeTitle"></span></h1>
+    <p class="lede" data-i18n="welcomeLede"></p>
+    <section id="setup" aria-labelledby="setup-title">
+      <h2 id="setup-title" data-i18n="setupTitle"></h2>
+      <p data-i18n="welcomeSetupNote"></p>
+      <ol>
+        <li data-i18n="welcomeStep1"></li>
+        <li data-i18n="setupAllowStep"></li>
+        <li data-i18n="welcomeStep3"></li>
+      </ol>
+      <button id="open-details" type="button" class="primary" data-i18n="openExtensionDetails"></button>
+      <p id="setup-state" role="status" data-i18n="checking"></p>
+    </section>
+    <section aria-labelledby="start-title">
+      <h2 id="start-title" data-i18n="welcomeStartTitle"></h2>
+      <div class="start">
+        <button id="start-template" type="button"><strong data-i18n="startTemplate"></strong><span data-i18n="startTemplateHint"></span></button>
+        <button id="start-builder" type="button"><strong data-i18n="startBuilder"></strong><span data-i18n="startBuilderHint"></span></button>
+        <button id="start-guide" type="button"><strong data-i18n="startGuide"></strong><span data-i18n="startGuideHint"></span></button>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -11,7 +11,7 @@ import {
 import { openManager, runMenuCommand, runNow } from "./tab-actions.js";
 import { checkUpdates, scheduleUpdates } from "./update-check.js";
 
-const extensionPages = ["manager/index.html", "popup/popup.html", "install/install.html", "devtools/panel.html"].map(path => chrome.runtime.getURL(path));
+const extensionPages = ["manager/index.html", "popup/popup.html", "install/install.html", "devtools/panel.html", "welcome/welcome.html"].map(path => chrome.runtime.getURL(path));
 
 // Every queued operation waits for the storage upgrade, so nothing reads the library half-migrated.
 const migrated = migrate().catch(error => console.error(`Storage upgrade failed: ${error.message}`));
@@ -38,7 +38,8 @@ function refresh() {
   scheduleUpdates().catch(error => console.warn(error.message));
 }
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(details => {
+  if (details?.reason === "install") chrome.tabs.create({ url: chrome.runtime.getURL("welcome/welcome.html") }).catch(ignore);
   refresh();
   setupInstallRedirect().catch(error => console.warn(error.message));
 });

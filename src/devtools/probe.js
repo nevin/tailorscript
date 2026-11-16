@@ -101,6 +101,38 @@ export function probe(command, argument) {
     return null;
   }
 
+  // Text as the runner compares it: all of it, with runs of space collapsed.
+  const textOf = element => (element.textContent ?? "").replace(/\s+/g, " ").trim();
+  // Elements matching a selector, narrowed to those with exactly this text when one is given.
+  const find = (selector, text) => {
+    try {
+      const found = [...document.querySelectorAll(selector)];
+      return text ? found.filter(element => textOf(element) === text) : found;
+    } catch {
+      return null;
+    }
+  };
+
+  // Short, readable text such as "Accept all" can tell apart elements that have no name of their own, and keeps
+  // working when the layout changes. Used before falling back to position.
+  function textTarget(element) {
+    const text = textOf(element);
+    if (!text || text.length > 60) return null;
+    const tag = CSS.escape(element.localName);
+    // The nearest named parent first, so the text only has to be unique within it; the whole page last.
+    const scopes = [];
+    for (let parent = element.parentElement, depth = 0; parent && depth < 5; parent = parent.parentElement, depth++) {
+      const anchor = candidates(parent).find(([selector, basis]) => (basis !== "Tag" || landmarks.includes(parent.localName)) && resolve(selector) === parent);
+      if (anchor) scopes.push(`${anchor[0]} `);
+    }
+    scopes.push("");
+    for (const scope of scopes) {
+      const found = find(scope + tag, text);
+      if (found?.length === 1 && found[0] === element) return { selector: scope + tag, text, basis: "Text" };
+    }
+    return null;
+  }
+
   function selectorFor(element) {
     const options = candidates(element);
     for (const [selector, basis] of options) {
@@ -114,6 +146,8 @@ export function probe(command, argument) {
         if (resolve(selector) === element) return { selector, basis: "Scoped to parent" };
       }
     }
+    const byText = textTarget(element);
+    if (byText) return byText;
     // Last resort: the element's position among its siblings, starting from the nearest parent that can be named.
     // A path always includes at least one parent, so it can't match some unrelated element on another page.
     const parts = [];
@@ -154,8 +188,8 @@ export function probe(command, argument) {
   };
   const own = element => element.closest?.("[data-tailorscript-probe]");
   const describe = (element, kind = kindOf(element)) => {
-    const { selector, basis } = selectorFor(element);
-    return { kind, label: label(element, kind), tag: element.localName, selector, basis, matches: selector ? 1 : 0, group: groupFor(element) };
+    const { selector, basis, text } = selectorFor(element);
+    return { kind, label: label(element, kind), tag: element.localName, selector, text, basis, matches: selector ? 1 : 0, group: groupFor(element) };
 
   };
 
@@ -245,13 +279,9 @@ export function probe(command, argument) {
   if (command === "describe") return argument instanceof Element && argument.getRootNode() === document ? describe(argument) : null;
   if (command === "count") return matches(argument);
   if (command === "diagnose") {
-    return argument.map(({ selector, expectedCount, tag, all }) => {
-      let elements;
-      try {
-        elements = document.querySelectorAll(selector);
-      } catch {
-        return "Invalid selector";
-      }
+    return argument.map(({ selector, text, expectedCount, tag, all }) => {
+      const elements = find(selector, text);
+      if (!elements) return "Invalid selector";
       if (!elements.length) return "No match";
       if (expectedCount != null && elements.length !== expectedCount) {
         return `Expected ${expectedCount}, found ${elements.length}`;
@@ -262,12 +292,14 @@ export function probe(command, argument) {
     });
   }
 
+  // The argument is a selector, or { selector, text } for an element found by its text.
   if (command === "highlight") {
-    if (!argument || matches(argument) < 1) {
+    const target = typeof argument === "string" ? { selector: argument } : argument;
+    const elements = target?.selector ? find(target.selector, target.text) ?? [] : [];
+    if (!elements.length) {
       clearBoxes();
       return 0;
     }
-    const elements = [...document.querySelectorAll(argument)];
     const rect = elements[0].getBoundingClientRect();
     if (rect.bottom < 0 || rect.top > innerHeight) elements[0].scrollIntoView({ block: "center" });
     outline(elements);

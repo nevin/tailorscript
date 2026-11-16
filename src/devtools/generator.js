@@ -34,11 +34,11 @@ export function stepProblem({ action, value }) {
 }
 
 export function compile(steps) {
-  return steps.map(({ selector, action, value, all, expectedCount, tag }) => {
+  return steps.map(({ selector, text, action, value, all, expectedCount, tag }) => {
     if (!Object.hasOwn(actions, action) || typeof selector !== "string" || !selector.trim()) {
       throw new Error("Every step needs a selector and a supported action.");
     }
-    const target = { selector, ...(all ? { all: true } : {}), expectedCount, tag };
+    const target = { selector, ...(text ? { text } : {}), ...(all ? { all: true } : {}), expectedCount, tag };
     if (action === "click") return { ...target, click: true };
     if (action === "fill") return { ...target, fill: value ?? "" };
     if (action === "shortcut") return { ...target, key: String(value ?? "").trim().slice(0, 20).toLowerCase() };
@@ -62,7 +62,8 @@ export function createRunner(steps, preview = false) {
   function targetsOf(step) {
     let matches;
     try {
-      matches = [...document.querySelectorAll(step.selector)].filter(element => !notes.has(element));
+      matches = [...document.querySelectorAll(step.selector)].filter(element => !notes.has(element) &&
+        (!step.text || (element.textContent ?? "").replace(/\s+/g, " ").trim() === step.text));
     } catch {
       return "Skipped · invalid selector";
     }
@@ -210,12 +211,19 @@ export function generateRecipe(recipe) {
 `;
 }
 
-// The recipe a script was generated from, or null once the script has been edited by hand.
+// The recipe a script was generated from, or null once the script has been edited by hand. Recipes from the first
+// builder (version 1) come back upgraded and marked, since that builder's output can't be regenerated to check them.
 export function readRecipe(source) {
   const marker = source.match(/^\/\/ Tailorscript recipe: (.+)$/m);
   if (!marker) return null;
   try {
     const recipe = JSON.parse(marker[1]);
+    if (recipe?.version === 1 && typeof recipe.page === "string" && Array.isArray(recipe.steps)) {
+      return {
+        version: 2, name: String(recipe.name ?? ""), page: recipe.page, scope: recipe.scope === "site" ? "site" : "path",
+        watch: Boolean(recipe.watch), steps: recipe.steps.filter(step => step && Object.hasOwn(actions, step.action)), upgraded: true
+      };
+    }
     if (recipe?.version !== 2) return null;
     return generateRecipe(recipe) === source ? recipe : null;
   } catch {

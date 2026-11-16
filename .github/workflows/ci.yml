@@ -39,3 +39,5 @@ jobs:
       - run: npm ci
       - run: npx puppeteer browsers install chrome
       - run: npm run test:e2e
+      # DevTools needs a visible window, so this one runs under a virtual display.
+      - run: xvfb-run -a npm run test:devtools

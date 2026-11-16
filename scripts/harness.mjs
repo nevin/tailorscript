@@ -13,7 +13,8 @@ const pages = {
   "/manager/index.html": "./manager.js",
   "/install/install.html": "./install.js",
   "/popup/popup.html": "./popup.js",
-  "/guide/guide.html": "./guide.js"
+  "/guide/guide.html": "./guide.js",
+  "/welcome/welcome.html": "./welcome.js"
 };
 // The popup asks for the active tab; the harness reports the URL after # (or a default) as that tab.
 const popupTab = `<script>chrome.tabs.query = async q => q.active ? [{ id: 1, url: location.hash.slice(1) || "https://example.com/" }] : [];</script>`;

@@ -4,12 +4,15 @@
 import assert from "node:assert/strict";
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import puppeteer from "puppeteer";
 import { build } from "../../scripts/build.mjs";
 import { distDir } from "../../scripts/lib/project.mjs";
+import { zip } from "../helpers/zip.mjs";
+import { topics } from "../../src/guide/content.js";
 
 let browser;
 let server;
@@ -200,7 +203,7 @@ test("the scripting guide opens and hands an example to the manager", async () =
   const guide = await browser.newPage();
   await guide.goto(`chrome-extension://${extensionId}/guide/guide.html#GM_setValue`);
   await guide.waitForSelector("#values.found");
-  assert.equal(await guide.$$eval(".topic", topics => topics.length), 10);
+  assert.equal(await guide.$$eval(".topic", nodes => nodes.length), topics.length);
   await guide.click("#values .example-actions .primary");
   await manager.waitForFunction(() => document.querySelector("#status").textContent.startsWith("Example loaded"));
   const text = await manager.evaluate(() => [...document.querySelectorAll(".cm-line")].map(line => line.textContent).join("\n"));
@@ -370,4 +373,55 @@ test("native toolbar popup keeps its width and aligns the pause control", async 
       await page.close();
     }
   }
+});
+
+test("extension pages have no accessibility violations axe can find", async () => {
+  const axe = await readFile(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
+  const pages = ["manager/index.html", "popup/popup.html", `install/install.html#${site()}/hello.user.js`, "guide/guide.html", "welcome/welcome.html"];
+  const found = [];
+  for (const path of pages) {
+    const page = await browser.newPage();
+    try {
+      await page.goto(`chrome-extension://${extensionId}/${path}`, { waitUntil: "networkidle0" });
+      await new Promise(resolve => setTimeout(resolve, 500));
+      // Runtime evaluation isn't subject to the extension's content security policy, so axe can be loaded this way.
+      await page.evaluate(axe);
+      // The code editor scrolls as its cursor moves, so its scroller needs no focus of its own.
+      const violations = await page.evaluate(async () => (await globalThis.axe.run({ exclude: [[".cm-scroller"]] }, {
+        runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"] }
+      })).violations.map(({ id, help, nodes }) => `${id}: ${help} (${nodes.slice(0, 3).map(node => node.target.join(" ")).join(", ")})`));
+      found.push(...violations.map(violation => `${path.split("#")[0]} · ${violation}`));
+    } finally {
+      await page.close();
+    }
+  }
+  assert.deepEqual(found, []);
+});
+
+test("a Tampermonkey backup imports with its values and runs once turned on", async () => {
+  const source = header("From Tampermonkey", ["match http://localhost/*", "grant GM_getValue", "grant GM_addElement"]) +
+    'GM_addElement(document.body, "p", { id: "imported", textContent: GM_getValue("greeting", "missing") });';
+  const backup = zip({
+    "From Tampermonkey.user.js": source,
+    "From Tampermonkey.options.json": JSON.stringify({ settings: { enabled: true, position: 1 }, options: {} }),
+    "From Tampermonkey.storage.json": JSON.stringify({ ts: 1, data: { greeting: "hello from Tampermonkey" } })
+  });
+  const file = path.join(extensionDir, "..", `tampermonkey-backup-${Date.now()}.zip`);
+  await writeFile(file, backup);
+  try {
+    await manager.bringToFront();
+    const input = await manager.$("#import-file");
+    await input.uploadFile(file);
+    await manager.waitForSelector("#review[open] .import-turn-on input:checked");
+    assert.match(await manager.$eval("#review-title", node => node.textContent), /tampermonkey-backup/);
+    assert.match(await manager.$eval("#review-content", node => node.textContent), /Brings 1 stored value/);
+    await manager.evaluate(() => [...document.querySelectorAll("#review-content button")].find(button => button.textContent === "Import selected").click());
+    await manager.waitForFunction(() => document.querySelector("#status").textContent.includes("1 turned on"));
+  } finally {
+    await rm(file, { force: true });
+  }
+  const page = await openPage();
+  await page.waitForSelector("#imported", { timeout: 5000 });
+  assert.equal(await page.$eval("#imported", node => node.textContent), "hello from Tampermonkey");
+  await page.close();
 });

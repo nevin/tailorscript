@@ -195,3 +195,53 @@ test("gives each script's world messaging and forgets worlds that are no longer 
   assert.deepEqual([...mock.worlds.keys()].sort(), ["", "B"]);
   assert.ok(mock.calls.some(call => call.join(":") === "resetWorld:A"));
 });
+
+test("the runtime provides the APIs scripts from other managers often use", async () => {
+  const grants = ["GM_addElement", "GM_log", "GM_getValues", "GM_setValues", "GM_deleteValues", "GM_addValueChangeListener",
+    "GM_removeValueChangeListener", "GM_download", "window.onurlchange"].map(grant => `// @grant ${grant}\n`).join("");
+  await chrome.storage.local.set({ "values:A": { a: 1, b: 2 } });
+  await syncScripts([{ id: "A", name: "A", enabled: true, source: userscript("x;", grants) }]);
+  const appended = [];
+  const element = tag => ({ localName: tag, attributes: {}, setAttribute(name, value) { this.attributes[name] = value; }, click() { this.clicked = true; }, remove() {} });
+  const page = { append: node => appended.push(node) };
+  const { context, sent } = sandbox({
+    document: { createElement: element, head: page, body: page, documentElement: page },
+    // The download's clean-up timer shouldn't keep the test process alive.
+    setInterval() {}, setTimeout: (callback, delay) => setTimeout(callback, delay).unref()
+  });
+  context.URL = class extends URL {
+    static createObjectURL() { return "blob:x"; }
+    static revokeObjectURL() {}
+  };
+  vm.runInContext(mock.registered[0].js[0].code, context);
+
+  const added = context.GM_addElement("style", { textContent: "a{}", id: "s" });
+  assert.equal(added.textContent, "a{}");
+  assert.equal(added.attributes.id, "s");
+  assert.equal(appended[0], added);
+
+  assert.deepEqual({ ...context.GM_getValues(["a", "missing"]) }, { a: 1 });
+  assert.deepEqual({ ...context.GM_getValues({ b: 0, c: 9 }) }, { b: 2, c: 9 });
+  const changes = [];
+  const id = context.GM_addValueChangeListener("a", (key, before, after, remote) => changes.push([key, before, after, remote]));
+  context.GM_setValues({ a: 5, d: 1 });
+  await new Promise(resolve => setTimeout(resolve, 10));
+  context.GM_deleteValues(["a"]);
+  await new Promise(resolve => setTimeout(resolve, 10));
+  context.GM_removeValueChangeListener(id);
+  context.GM_setValues({ a: 6 });
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.deepEqual(changes, [["a", 1, 5, false], ["a", 5, undefined, false]]);
+  assert.ok(sent.some(message => message.type === "value" && message.op === "delete" && message.key === "a"));
+
+  assert.equal(context.window.onurlchange, null, "scripts can detect urlchange support");
+
+  context.reply = message => message.type === "xhr" ? { value: {
+    status: 200, statusText: "OK", finalUrl: message.request.url, responseHeaders: "", contentType: "text/plain", body: Buffer.from("hi").toString("base64")
+  } } : {};
+  const saved = await new Promise((resolve, reject) => context.GM_download({ url: "/files/report.txt", onload: resolve, onerror: reject }));
+  assert.equal(saved.url, "/files/report.txt");
+  const link = appended.find(node => node.localName === "a");
+  assert.equal(link.download, "report.txt");
+  assert.equal(link.clicked, true);
+});

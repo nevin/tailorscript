@@ -113,7 +113,8 @@
  *   focusMessage?: string,
  *   newScriptSite?: string,
  *   pendingEnable?: { id: string, at: number },
- *   newScriptSource?: string
+ *   newScriptSource?: string,
+ *   showBuilderHelp?: boolean
  * }} SessionStore
  */
 

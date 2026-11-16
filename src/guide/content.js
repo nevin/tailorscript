@@ -10,7 +10,7 @@ export const topics = [
     id: "addStyle",
     title: "Change how a page looks",
     lead: "Give `GM_addStyle` some CSS and it is added to the page. This is the quickest way to restyle a site or hide parts of it, and it needs no other code.",
-    apis: ["GM_addStyle", "GM.addStyle"],
+    apis: ["GM_addStyle", "GM.addStyle", "GM_addElement", "GM.addElement"],
     example: header("Bigger text, no banner", ["run-at      document-start", "grant       GM_addStyle"]) + `
 GM_addStyle(\`
   body { font-size: 18px; }
@@ -19,14 +19,17 @@ GM_addStyle(\`
     notes: [
       "Add `@run-at document-start` so the styles apply before the page is drawn. Without it the page can flash its original look first.",
       "If a rule doesn't take effect, the site's own CSS is probably more specific. Add `!important` to the declaration.",
-      "To find the selector for something on a page, right-click it and choose Inspect."
+      "To find the selector for something on a page, right-click it and choose Inspect.",
+      "To add a whole element, such as a button or a link to a stylesheet, use `GM_addElement(\"tag\", { attribute: \"value\" })`. Give it a parent element first to choose where it goes."
     ]
   },
   {
     id: "values",
     title: "Remember things between visits",
     lead: "Ordinary variables are lost when the page reloads. Stored values are kept by Tailorscript, separately for each script, until you delete them. Use them for settings, counters or anything the script should remember.",
-    apis: ["GM.getValue", "GM.setValue", "GM.deleteValue", "GM.listValues", "GM_getValue", "GM_setValue", "GM_deleteValue", "GM_listValues"],
+    apis: ["GM.getValue", "GM.setValue", "GM.deleteValue", "GM.listValues", "GM_getValue", "GM_setValue", "GM_deleteValue", "GM_listValues",
+      "GM_getValues", "GM_setValues", "GM_deleteValues", "GM.getValues", "GM.setValues", "GM.deleteValues",
+      "GM_addValueChangeListener", "GM_removeValueChangeListener", "GM.addValueChangeListener", "GM.removeValueChangeListener"],
     example: header("Count my visits", ["grant       GM.getValue", "grant       GM.setValue"]) + `
 (async () => {
   // The second argument is what you get back when nothing has been saved yet.
@@ -39,7 +42,9 @@ GM_addStyle(\`
       "The `GM.` versions return promises, so use them with `await` inside an `async` function, as the example does.",
       "The `GM_` versions answer straight away, without `await`. They read a copy of the values taken when the page loaded, so a change made in another tab shows up after a reload.",
       "Each script has its own values. One script can't read another's.",
-      "To see or clear what a script has saved, open the script's ⋯ menu in the manager and choose Stored values."
+      "To see or clear what a script has saved, open the script's ⋯ menu in the manager and choose Stored values.",
+      "`GM_getValues`, `GM_setValues` and `GM_deleteValues` work on several keys at once, for scripts written for Tampermonkey's newer versions.",
+      "`GM_addValueChangeListener` calls a function when the script changes a value on the same page. Changes made in other tabs aren't reported yet."
     ]
   },
   {
@@ -130,6 +135,21 @@ GM_registerMenuCommand("Open the documentation", () => {
     ]
   },
   {
+    id: "download",
+    title: "Download a file",
+    lead: "`GM_download` saves a file from the web to your Downloads folder, under a name you choose. It suits saving images, data or the page itself.",
+    apis: ["GM_download", "GM.download"],
+    example: header("Save this page", ["grant       GM_download", "grant       GM_registerMenuCommand"]) + `
+GM_registerMenuCommand("Download this page", () => {
+  GM_download({ url: location.href, name: "saved-page.html" });
+});`,
+    notes: [
+      "Files from the page's own site need nothing else. Files from other sites need a `@connect` line for that host, just like requests.",
+      "Pass `onload` and `onerror` functions in the object to hear when the file was saved or the download failed.",
+      "Chrome may ask where to save the file, depending on your download settings."
+    ]
+  },
+  {
     id: "resources",
     title: "Bundle files with your script",
     lead: "`@resource` gives a file a name and downloads it once, when you save the script. The script can then read it instantly on every page, with no request and no `@connect`. It suits stylesheets, data files and images.",
@@ -150,12 +170,13 @@ GM_addStyle(GM_getResourceText("theme"));`,
     id: "info",
     title: "Read details about your script",
     lead: "`GM_info` is an object describing the script and the manager running it. It is always available, with no `@grant` line.",
-    apis: ["GM_info", "GM.info"],
+    apis: ["GM_info", "GM.info", "GM_log", "GM.log"],
     example: header("Say which version is running", ["version     1.0.0", "grant       none"]) + `
 console.log(\`\${GM_info.script.name} \${GM_info.script.version} is running in \${GM_info.scriptHandler}.\`);`,
     notes: [
       "`GM_info.script` has the header's `name`, `version`, `description`, `matches` and more. `GM_info.scriptMetaStr` is the whole header as text.",
-      "`GM_info.scriptHandler` is “Tailorscript”, which lets a script written for several managers tell where it is running."
+      "`GM_info.scriptHandler` is “Tailorscript”, which lets a script written for several managers tell where it is running.",
+      "`GM_log(...)` writes to the console like `console.log`, labelled with the script's name so you can tell scripts apart."
     ]
   },
   {

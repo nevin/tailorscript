@@ -47,7 +47,7 @@ details summary { cursor: pointer; font-weight: 600; }
   max-height: 28rem; overflow: auto; margin: .6rem 0 0; padding: .75rem; border: 1px solid var(--border); border-radius: 8px;
   background: var(--surface-2); font: var(--editor-font); tab-size: 2;
 }
-#source .comment { color: light-dark(#5f7a68, #8fae99); font-style: italic; }
+#source .comment { color: var(--syntax-comment); font-style: italic; }
 #source .string { color: light-dark(#a3401d, #ffb38a); }
 #source .keyword { color: light-dark(#5c3cc0, #c3adff); }
 #source .number { color: light-dark(#0f5f8f, #86d0ff); }

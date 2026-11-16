@@ -4,6 +4,23 @@ All notable changes to Tailorscript are recorded here. Versions follow [Semantic
 
 ## [Unreleased]
 
+### Added
+- A welcome tab opens when Tailorscript is installed. It walks through Chrome's **Allow User Scripts** switch, confirms when it's on, and offers ways to start.
+- **Download as .user.js** and **Copy code** in a script's ⋯ menu, for sharing one script.
+- The builder reopens recipes made with its first version and updates them when saved.
+- The builder can find an element by its text, such as the button that says “Accept all”, when it has no stable name. That keeps steps working when a site changes its layout, and the text can be edited under Advanced.
+- Translation support: the manifest, popup and welcome page take their text from `_locales/en/messages.json`, and a test checks every message exists and is used.
+
+- Import backups from other userscript managers: Tampermonkey and ScriptCat zip or text exports, Violentmonkey zips, and any zip of `.user.js` files. Scripts keep whether they were on, their stored values, and the site rules, run-at time and frame setting changed in the other manager. The review lists what changed for each script and any APIs Tailorscript doesn't support, and can turn on the scripts that were on.
+- New APIs that scripts from other managers often use: `GM_addElement`, `GM_download`, `GM_log`, `GM_getValues`, `GM_setValues`, `GM_deleteValues`, `GM_addValueChangeListener` and `GM_removeValueChangeListener` (for changes on the same page), and `window.onurlchange`, each with its `GM.` form where one exists.
+
+### Fixed
+- Comments in code examples were slightly below the contrast minimum in light mode.
+
+### Developer
+- An accessibility check runs axe on the manager, popup, install page, guide and welcome page in the end-to-end tests. Code examples in the guide can now be scrolled from the keyboard.
+- `npm run test:devtools` opens the builder in a real DevTools window and checks the DevTools theme, Use Elements selection, Test, Save and turning a recipe on. CI runs it under a virtual display.
+
 ## [0.7.0]
 
 ### Added

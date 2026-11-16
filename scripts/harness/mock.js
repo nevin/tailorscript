@@ -48,6 +48,23 @@
     },
     tabs: { onRemoved: on("tr"), onUpdated: on("tu"), query: async () => [], reload: async () => {}, create: async props => { console.log("tabs.create", JSON.stringify(props)); return { id: 50 }; },
       update: async (id, props) => console.log("tabs.update", JSON.stringify(props)), getCurrent: async () => ({ id: 77 }), remove: async id => console.log("tabs.remove", id) },
+    // Reads the English messages the way Chrome does, including $placeholder$ substitutions.
+    i18n: {
+      getMessage(key, substitutions = []) {
+        if (!window.mockMessages) {
+          const request = new XMLHttpRequest();
+          request.open("GET", "/_locales/en/messages.json", false);
+          request.send();
+          window.mockMessages = JSON.parse(request.responseText);
+        }
+        const entry = window.mockMessages[key];
+        if (!entry) return "";
+        return entry.message.replace(/\$(\w+)\$/g, (text, name) => {
+          const content = entry.placeholders?.[name.toLowerCase()]?.content ?? text;
+          return content.replace(/\$(\d)/g, (_, index) => substitutions[index - 1] ?? "");
+        });
+      }
+    },
     action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} },
     alarms: { get: async () => ({}), create: async () => {}, onAlarm: on("alarm") },
     notifications: { create: async () => {}, clear: async () => {}, onClicked: on("nc"), onClosed: on("nx") },

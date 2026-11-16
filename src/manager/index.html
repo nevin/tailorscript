@@ -30,7 +30,7 @@
           <button id="trash" type="button" role="menuitem">Trash</button>
         </div>
       </details>
-      <input id="import-file" type="file" accept=".js,.json" hidden>
+      <input id="import-file" type="file" accept=".js,.json,.zip,.txt" hidden>
     </div>
   </header>
   <div id="setup-banner" class="banner" role="alert" hidden>
@@ -82,7 +82,7 @@
           <button id="welcome-template" type="button"><strong>Start from a template</strong><span>Hide clutter, add styles, click buttons and more.</span></button>
           <button id="welcome-builder" type="button"><strong>Build one without code</strong><span>Point at parts of a page in the browser’s developer tools.</span></button>
           <button id="welcome-install" type="button"><strong>Install from a link</strong><span>Use a script someone shared, after reviewing it.</span></button>
-          <button id="welcome-import" type="button"><strong>Import a backup</strong><span>Bring back scripts you exported before.</span></button>
+          <button id="welcome-import" type="button"><strong>Import a backup</strong><span>From Tailorscript, Tampermonkey, Violentmonkey or another manager.</span></button>
         </div>
         <p class="welcome-guide">New to this? <a href="../guide/guide.html" target="tailorscript-guide">Read the scripting guide</a>.</p>
       </div>
@@ -104,6 +104,8 @@
               <button id="history" type="button" role="menuitem" hidden>Version history…</button>
               <button id="values" type="button" role="menuitem" hidden>Stored values…</button>
               <button id="updates" type="button" role="menuitem" hidden>Updates…</button>
+              <button id="download-script" type="button" role="menuitem">Download as .user.js</button>
+              <button id="copy-script" type="button" role="menuitem">Copy code</button>
               <div id="order-controls" hidden>
                 <span id="order-label" class="menu-label"></span>
                 <button id="move-up" type="button" role="menuitem">Run earlier</button>

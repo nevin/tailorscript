@@ -23,7 +23,8 @@
     "typecheck": "tsc -p .",
     "vendor:check": "node scripts/vendor.mjs --check",
     "dev": "node scripts/dev.mjs",
-    "test:e2e": "node --test tests/e2e/extension.e2e.mjs"
+    "test:e2e": "node --test tests/e2e/extension.e2e.mjs",
+    "test:devtools": "node --test tests/e2e/devtools.e2e.mjs"
   },
   "devDependencies": {
     "@codemirror/autocomplete": "^6.20.4",
@@ -38,6 +39,7 @@
     "@lezer/highlight": "^1.2.5",
     "@types/chrome": "^0.3.7",
     "acorn": "^8.19.0",
+    "axe-core": "^4.14.0",
     "codemirror": "^6.0.2",
     "esbuild": "^0.28.2",
     "eslint": "^10.14.0",

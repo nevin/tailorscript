@@ -1,0 +1,25 @@
+:root { font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); }
+main { width: min(100% - 2rem, 44rem); margin: 3rem auto; display: grid; gap: 1.5rem; }
+h1 { display: flex; align-items: center; gap: .7rem; margin: 0; font-size: 1.9rem; letter-spacing: -.02em; }
+h2 { margin: 0 0 .5rem; font-size: 1.15rem; }
+p { margin: 0 0 .6rem; }
+.lede { color: var(--muted); font-size: 1.1rem; margin: 0; }
+section { padding: 1.2rem 1.4rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+#setup[data-state="done"] { border-color: var(--success); }
+ol { margin: 0 0 1rem; padding-left: 1.3rem; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button {
+  font: inherit; color: inherit; cursor: pointer; padding: .55rem .9rem; border-radius: var(--radius-sm);
+  background: var(--surface); border: 1px solid var(--border-strong);
+}
+button:hover { border-color: var(--accent); }
+.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+#setup-state { margin: .8rem 0 0; color: var(--muted); }
+#setup-state[data-state="done"] { color: var(--success); font-weight: 600; }
+.start { display: grid; gap: .6rem; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); }
+.start button { display: grid; align-content: start; gap: .2rem; text-align: left; }
+#setup[data-state="done"] :is(p:not(#setup-state), ol) { display: none; }
+.start button:hover { background: var(--accent-soft); }
+.start span { color: var(--muted); font-size: .85rem; }

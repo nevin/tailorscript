@@ -668,6 +668,30 @@ window.addEventListener("focus", () => {
   if (registrationState?.setupNeeded && !busy) perform(() => send({ type: "sync" }));
 });
 
+// Shares the script in the editor as a .user.js file, the form other managers and script sites use.
+function scriptFileName(text) {
+  let name = "script";
+  try {
+    name = parseSource(text).name;
+  } catch {
+    // An unfinished header still downloads, under a generic name.
+  }
+  return `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "script"}.user.js`;
+}
+$("#download-script", HTMLButtonElement).addEventListener("click", () => {
+  const url = URL.createObjectURL(new Blob([source.value], { type: "text/javascript" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = scriptFileName(source.value);
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  status.textContent = `Downloaded ${link.download}${isDirty() ? ", including your unsaved changes" : ""}.`;
+});
+$("#copy-script", HTMLButtonElement).addEventListener("click", () => {
+  navigator.clipboard.writeText(source.value).then(() => { status.textContent = "Code copied."; },
+    () => { status.textContent = "Couldn’t copy. Select the code in the editor and use your copy shortcut."; });
+});
+
 // The visual builder lives in the page's developer tools, which an extension can't open, so this explains the way there.
 function showBuilderHelp(back) {
   const steps = element("ol", undefined, "builder-steps");
@@ -784,7 +808,7 @@ chrome.storage.onChanged.addListener((/** @type {Record<string, { newValue?: any
 
 await perform(async () => {
   await reloadData();
-  const context = await getSession(["diagnosticUrl", "runs", "focusScript", "focusMessage", "newScriptSite", "newScriptSource"]);
+  const context = await getSession(["diagnosticUrl", "runs", "focusScript", "focusMessage", "newScriptSite", "newScriptSource", "showBuilderHelp"]);
   runs = context.runs ?? {};
   diagnosticUrl.value = context.diagnosticUrl ?? "";
   if (diagnosticUrl.value) showDiagnostics(true);
@@ -794,4 +818,8 @@ await perform(async () => {
   if (context.focusScript) chrome.storage.session.remove(["focusScript", "focusMessage"]);
   if (context.newScriptSite) setTimeout(() => newScriptRequested(context.newScriptSite));
   if (context.newScriptSource) setTimeout(() => exampleRequested(context.newScriptSource));
+  if (context.showBuilderHelp) {
+    chrome.storage.session.remove("showBuilderHelp");
+    setTimeout(() => showBuilderHelp());
+  }
 });

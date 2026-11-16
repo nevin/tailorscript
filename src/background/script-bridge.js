@@ -59,10 +59,11 @@ export function recordMenu(id, { op, commandId, caption }, sender) {
   });
 }
 
+// family can be a list when any of several APIs is enough, such as downloads, which make requests too.
 async function grantedScript(id, family, api) {
   const script = (await readScripts()).find(item => item.id === id);
   const metadata = script && parseSource(script.source);
-  if (!metadata || !allows(metadata.grants, family)) throw new Error(`Add @grant ${api} to use this API.`);
+  if (!metadata || ![family].flat().some(name => allows(metadata.grants, name))) throw new Error(`Add @grant ${api} to use this API.`);
   return { script, metadata };
 }
 
@@ -110,7 +111,7 @@ export function connectAllowed(connects, target, pageUrl) {
 const requests = new Map();
 
 async function handleXhr(id, { requestId, request }, sender) {
-  const { metadata } = await grantedScript(id, "xhr", "GM_xmlhttpRequest");
+  const { metadata } = await grantedScript(id, ["xhr", "download"], "GM_xmlhttpRequest");
   const url = new URL(request.url);
   if (!["http:", "https:"].includes(url.protocol)) throw new Error("GM_xmlhttpRequest only supports http and https URLs.");
   if (!connectAllowed(metadata.connects, url, sender.url)) throw new Error(`Add // @connect ${url.hostname} to request this site.`);

@@ -30,6 +30,8 @@ src/                 The extension, loadable as-is
   popup/             Toolbar popup
   install/           Install page for .user.js links
   guide/             Scripting guide: userscript basics and each GM API with an example
+  welcome/           Page opened on install: Allow User Scripts setup and ways to start
+  _locales/          Translatable text (English in en/messages.json); see shared/i18n.js
   devtools/          Visual builder shown as a DevTools tab: page scanner, recipe steps and script generator
   shared/            Metadata parsing, validation, storage, sync backup and the colour tokens (tokens.css) used by every page
   icons/             Logo sources (SVG) and the PNG sizes Chrome needs
@@ -58,6 +60,7 @@ See [docs/architecture.md](docs/architecture.md) for how the pieces talk to each
 | `npm run typecheck` | Type-checks `src/` with TypeScript, using JSDoc types and `@types/chrome`. Nothing is compiled. |
 | `npm test` | Runs the unit and integration tests and fails below 80% line coverage of the modules they load. |
 | `npm run test:e2e` | Loads the built extension in Chrome for Testing and checks injection, the GM bridge, Run now, menu commands, the install redirect and the editor. Run `npx puppeteer browsers install chrome` once first. |
+| `npm run test:devtools` | Opens the visual builder in a real DevTools window. It needs a visible browser window; on Linux run it with `xvfb-run -a`. |
 | `npm run verify` | Lint, type check, tests and check together, as CI runs them. |
 | `npm run package` | Builds and writes a reproducible `release/tailorscript-<version>.zip` with a SHA-256 checksum. |
 | `npm run release` | `verify`, then `package`. |
@@ -157,7 +160,18 @@ When two manager tabs edit the same script, or the popup changes it while you ha
 
 - **Export backup** downloads a JSON file with script sources and history. The library reminds you when changes haven't been exported for a week.
 - **Backup settings** can copy script sources to Chrome sync after every change (about 100 KB total, sources only) and restore them on another profile.
-- **Import scripts** accepts a backup or a `.user.js` file. The review lets you skip scripts, add copies, or replace a script with the same name. Imported and replaced scripts are disabled until you review them. Site grants, enabled settings, and stored values are not included.
+- **Import scripts** accepts a Tailorscript backup, a `.user.js` file, or a backup from another userscript manager. The review lets you skip scripts, add copies, or replace a script with the same name. Imported scripts start off until you review them, except that scripts which were on in another manager can be turned on during the import, after Chrome asks to allow their sites. A Tailorscript backup doesn't include site grants, on/off settings or stored values.
+
+### Moving from another userscript manager
+
+| From | Export there | What comes across |
+| --- | --- | --- |
+| Tampermonkey | Utilities → Export → **Zip** (or the older text export) | Scripts, whether each was on, stored values, and the site rules, run-at time and frame setting you changed in Tampermonkey |
+| Violentmonkey | Settings → **Export as zip file** (check *Export values*) | Scripts, whether each was on, stored values, and your custom site rules, run-at time and frame setting |
+| ScriptCat | Its Tampermonkey-style zip backup | As for Tampermonkey |
+| Greasemonkey and others | Any zip of `.user.js` files, or the files one at a time | Scripts |
+
+The review lists, for each script, what the conversion changed and any APIs it uses that Tailorscript doesn't support yet, such as `GM_cookie` or `GM_webRequest`; those parts of the script won't work. Tailorscript supports the APIs most scripts use, including `GM_addElement`, `GM_download`, `GM_log`, `GM_getValues`/`GM_setValues`/`GM_deleteValues`, value change listeners (for changes on the same page) and `window.onurlchange`.
 - **Version history** keeps 25 previous versions per script. Label a version, compare it line by line with the editor, or load it and save to restore it.
 
 ## License

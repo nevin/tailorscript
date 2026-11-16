@@ -9,12 +9,36 @@ const requestDoc = "Requests any URL from the page's own site or a host listed w
 const menuDoc = "Adds a command under this script in the Tailorscript popup. Returns its id.";
 const notificationDoc = "Shows a desktop notification. onclick runs when the user clicks it, ondone when it closes.";
 const tabDoc = "Opens an http or https URL in a new tab next to this one.";
+const elementParams = ["parent?: Element", "tag: string", "attributes?: object"];
+const elementDoc = "Creates an element with these attributes (textContent sets its text) and adds it to parent, or to the page's head or body.";
+const valuesGet = { params: ["keys: string[] | { [key]: fallback }"], doc: "Reads several stored values at once. Pass an object to give each key a fallback." };
+const valuesSet = { params: ["values: object"], doc: "Saves each key and value in the object." };
+const valuesDelete = { params: ["keys: string[]"], doc: "Deletes the values with these keys." };
+const listenerDoc = "Calls callback(key, oldValue, newValue, remote) when this script changes that stored value on this page. Returns an id for removing it. Changes made in other tabs aren't reported yet.";
+const downloadParams = ["details: string | { url, name?, headers?, onload?, onerror? }", "name?: string"];
+const downloadDoc = "Downloads a file and saves it under name. Files from sites other than the page's own need @connect, like GM_xmlhttpRequest.";
 
 export const gmApis = {
   GM_info: { kind: "property", type: "object", doc: "Details about this script and Tailorscript: script.name, script.version, script.matches, scriptMetaStr and more. Always available." },
   "GM.info": { kind: "property", type: "object", doc: "Details about this script and Tailorscript. Always available." },
   GM_addStyle: { params: ["css: string"], returns: "HTMLStyleElement", doc: "Adds a <style> element with this CSS to the page." },
   "GM.addStyle": { params: ["css: string"], returns: "Promise<HTMLStyleElement>", doc: "Adds a <style> element with this CSS to the page." },
+  GM_addElement: { params: elementParams, returns: "Element", doc: elementDoc },
+  "GM.addElement": { params: elementParams, returns: "Promise<Element>", doc: elementDoc },
+  GM_log: { params: ["...values: any"], returns: "void", doc: "Writes to the page's console, labelled with this script's name." },
+  "GM.log": { params: ["...values: any"], returns: "Promise<void>", doc: "Writes to the page's console, labelled with this script's name." },
+  GM_getValues: { ...valuesGet, returns: "object", doc: `${valuesGet.doc} Reads the copy taken when the page loaded.` },
+  "GM.getValues": { ...valuesGet, returns: "Promise<object>" },
+  GM_setValues: { ...valuesSet, returns: "void" },
+  "GM.setValues": { ...valuesSet, returns: "Promise<void>" },
+  GM_deleteValues: { ...valuesDelete, returns: "void" },
+  "GM.deleteValues": { ...valuesDelete, returns: "Promise<void>" },
+  GM_addValueChangeListener: { params: ["key: string", "callback: (key, oldValue, newValue, remote) => void"], returns: "string", doc: listenerDoc },
+  "GM.addValueChangeListener": { params: ["key: string", "callback: (key, oldValue, newValue, remote) => void"], returns: "Promise<string>", doc: listenerDoc },
+  GM_removeValueChangeListener: { params: ["id: string"], returns: "void", doc: "Stops a listener added with GM_addValueChangeListener." },
+  "GM.removeValueChangeListener": { params: ["id: string"], returns: "Promise<void>", doc: "Stops a listener added with GM.addValueChangeListener." },
+  GM_download: { params: downloadParams, returns: "{ abort() }", doc: downloadDoc },
+  "GM.download": { params: downloadParams, returns: "Promise<void> & { abort() }", doc: downloadDoc },
   GM_getValue: { ...valueGet, returns: "any", doc: `${valueGet.doc} Reads the copy taken when the page loaded.` },
   "GM.getValue": { ...valueGet, returns: "Promise<any>" },
   GM_setValue: { ...valueSet, returns: "void" },

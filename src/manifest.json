@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Tailorscript – Userscript Manager",
-  "short_name": "Tailorscript",
+  "name": "__MSG_appName__",
+  "short_name": "__MSG_appShortName__",
   "version": "0.7.0",
-  "description": "Tailor websites with your own JavaScript. A private userscript manager that keeps scripts in your browser.",
+  "description": "__MSG_appDescription__",
   "minimum_chrome_version": "138",
   "permissions": [
     "storage",
@@ -19,7 +19,7 @@
     "https://*/*"
   ],
   "action": {
-    "default_title": "Tailorscript",
+    "default_title": "__MSG_actionTitle__",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png"
@@ -35,7 +35,7 @@
       "suggested_key": {
         "default": "Alt+Shift+P"
       },
-      "description": "Pause or resume all scripts"
+      "description": "__MSG_commandTogglePause__"
     }
   },
   "web_accessible_resources": [
@@ -55,5 +55,6 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "devtools_page": "devtools/devtools.html"
+  "devtools_page": "devtools/devtools.html",
+  "default_locale": "en"
 }

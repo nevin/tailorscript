@@ -71,3 +71,25 @@ test("a hand-edited script is no longer a recipe", () => {
   assert.equal(readRecipe("// ==UserScript==\n// @name A\n// ==/UserScript=="), null);
   assert.throws(() => generateRecipe(recipe([step("hide")], { page: "chrome://extensions" })), /HTTP or HTTPS/);
 });
+
+test("recipes from the first builder open upgraded", () => {
+  const old = { version: 1, name: "Old", page: "https://shop.example/sale", scope: "path", watch: false,
+    steps: [{ selector: "h1", label: "Heading", action: "font", value: "20", all: false, expectedCount: 1, tag: "h1" }, { selector: "p", action: "explode" }] };
+  const source = `// ==UserScript==\n// @name Old\n// ==/UserScript==\n// Tailorscript recipe: ${JSON.stringify(old)}\n(() => {})();\n`;
+  const upgraded = readRecipe(source);
+  assert.equal(upgraded.version, 2);
+  assert.equal(upgraded.upgraded, true);
+  assert.equal(upgraded.scope, "path");
+  assert.deepEqual(upgraded.steps.map(step => step.action), ["font"]);
+  assert.match(generateRecipe(upgraded), /"font-size",\n\s+"20px"/);
+});
+
+test("steps found by their text keep the text in the script", () => {
+  const data = recipe([step("click", undefined, { selector: "#cookie button", text: "Accept all" })]);
+  const [compiled] = compile(data.steps);
+  assert.equal(compiled.text, "Accept all");
+  const source = generateRecipe(data);
+  assert.match(source, /"text": "Accept all"/);
+  assert.equal(readRecipe(source).steps[0].text, "Accept all");
+  assert.ok(!("text" in compile([step("hide")])[0]));
+});

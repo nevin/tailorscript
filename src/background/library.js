@@ -117,20 +117,26 @@ export const handlers = {
   async import({ entries }, scripts, index, current, { deps }) {
     const now = Date.now();
     const extra = {};
-    entries.forEach(({ source, history, replace }, position) => {
+    // A script is only turned on when Chrome has granted its sites; the manager asks first.
+    const granted = await Promise.all(entries.map(({ source, enabled }) => enabled
+      ? chrome.permissions.contains({ origins: parseSource(source).origins }) : false));
+    entries.forEach(({ source, history, replace, values }, position) => {
       const { name } = parseSource(source);
+      const enabled = granted[position];
       const at = replace ? scripts.findIndex(script => script.id === replace) : -1;
       let id;
       if (at === -1) {
         id = crypto.randomUUID();
-        scripts.push({ id, source, history, enabled: false, name, updatedAt: now });
+        scripts.push({ id, source, history, enabled, name, updatedAt: now });
       } else {
-        // Replaced scripts are disabled so imported code is reviewed before it runs.
+        // Replaced scripts stay off unless the person chose to turn them on, so imported code is reviewed first.
         const previous = scripts[at];
         id = previous.id;
-        scripts[at] = { ...previous, name, source, enabled: false, history: withHistory(previous, source), updatedAt: now };
+        scripts[at] = { ...previous, name, source, enabled, history: withHistory(previous, source), updatedAt: now };
       }
       extra[`deps:${id}`] = deps[position];
+      // Values carried over from another manager, within the same 1 MB a script can store here.
+      if (values && JSON.stringify(values).length <= 1024 * 1024) extra[`values:${id}`] = values;
     });
     return commit(scripts, extra);
   },

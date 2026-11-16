@@ -1,4 +1,5 @@
 import { $ } from "../shared/dom.js";
+import { localize, t } from "../shared/i18n.js";
 import { timeAgo } from "../shared/format.js";
 import { findScriptsUrl, installPageUrl, isUserscriptUrl } from "../shared/install.js";
 import { getSession, readScripts, readSettings } from "../shared/storage.js";
@@ -17,9 +18,10 @@ const check = $("#check", HTMLButtonElement);
 const find = $("#find", HTMLButtonElement);
 const setup = $("#setup");
 
+localize();
 const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 const url = /^https?:/.test(tab?.url ?? "") ? new URL(tab.url) : null;
-$("#page").textContent = url?.host ?? "This page can’t run userscripts";
+$("#page").textContent = url?.host ?? t("pageCannotRun");
 reload.hidden = !url;
 check.hidden = !url;
 create.hidden = !url;
@@ -28,7 +30,7 @@ $("#install-banner").hidden = !isUserscriptUrl(tab?.url);
 let expanded;
 
 async function send(message) {
-  const connectionError = "Tailorscript’s background worker didn’t answer. Close and reopen this popup. If it happens again, reload Tailorscript in chrome://extensions.";
+  const connectionError = t("workerNoAnswer");
   let response;
   try {
     response = await chrome.runtime.sendMessage(message);
@@ -50,15 +52,15 @@ async function openManager(context = {}) {
 
 function runText(script, run, state, settings) {
   if (state?.manual?.includes(script.id) || (!script.enabled && run)) {
-    return run ? [`Ran ${timeAgo(run.at)}`, "ran"] : ["Runs when you choose Run now", "off"];
+    return run ? [t("ranAgo", timeAgo(run.at)), "ran"] : [t("runsOnRunNow"), "off"];
   }
-  if (!script.enabled) return ["Off", "off"];
-  if (settings.paused) return ["Paused", "off"];
+  if (!script.enabled) return [t("stateOff"), "off"];
+  if (settings.paused) return [t("statePaused"), "off"];
   if (state?.issues?.[script.id]) return [state.issues[script.id], "warning"];
-  if (run?.error) return [`Error${run.error.line ? ` on line ${run.error.line}` : ""}: ${run.error.message}`, "error"];
-  if (run) return [`Ran ${timeAgo(run.at)}`, "ran"];
-  if (script.pendingUpdate) return [`Update to v${script.pendingUpdate.version} is waiting for review`, "warning"];
-  return ["Hasn’t run on this page yet", "pending"];
+  if (run?.error) return [run.error.line ? t("errorOnLine", run.error.line, run.error.message) : t("errorPlain", run.error.message), "error"];
+  if (run) return [t("ranAgo", timeAgo(run.at)), "ran"];
+  if (script.pendingUpdate) return [t("updateWaiting", script.pendingUpdate.version), "warning"];
+  return [t("notRunYet"), "pending"];
 }
 
 // Messages are warnings unless they say otherwise.
@@ -70,7 +72,7 @@ function tell(text, kind = "warning") {
 // The Reload button stands out whenever the page needs reloading for a change to show.
 function suggestReload() {
   reload.dataset.suggested = "true";
-  reload.textContent = "Reload to apply";
+  reload.textContent = t("reloadToApply");
 }
 
 function button(label, action, className) {
@@ -100,7 +102,7 @@ function renderScript(script, runs, menus, session, settings) {
   toggle.className = "switch";
   toggle.setAttribute("role", "switch");
   toggle.checked = script.enabled;
-  toggle.setAttribute("aria-label", `Enable ${script.name}`);
+  toggle.setAttribute("aria-label", t("enableScript", script.name));
   toggle.addEventListener("change", () => setEnabled(script, toggle));
   const details = document.createElement("div");
   const name = document.createElement("span");
@@ -118,15 +120,15 @@ function renderScript(script, runs, menus, session, settings) {
   actions.id = `actions-${script.id}`;
   actions.hidden = expanded !== script.id;
   actions.append(
-    button("Run now", () => act(async () => {
+    button(t("runNow"), () => act(async () => {
       await send({ type: "run-now", id: script.id, tabId: tab.id });
-    }, `Sent “${script.name}” to this page.`)),
-    button("Edit", () => openManager({ focusScript: script.id })),
-    button(`Don’t run on ${url.hostname}`, () => act(async () => {
-      if (!confirm(`Stop “${script.name}” from running on ${url.hostname}? This adds an @exclude-match line you can remove in the editor.`)) return false;
+    }, t("sentToPage", script.name))),
+    button(t("edit"), () => openManager({ focusScript: script.id })),
+    button(t("dontRunOn", url.hostname), () => act(async () => {
+      if (!confirm(t("confirmExclude", script.name, url.hostname))) return false;
       await send({ type: "exclude-site", id: script.id, host: url.hostname });
       suggestReload();
-    }, `“${script.name}” won’t run on ${url.hostname}. Reload to apply.`)));
+    }, t("excluded", script.name, url.hostname))));
   function setActions(open) {
     expanded = open ? script.id : undefined;
     for (const other of /** @type {NodeListOf<HTMLElement>} */ (list.querySelectorAll(".actions"))) other.hidden = other !== actions || !open;
@@ -140,7 +142,7 @@ function renderScript(script, runs, menus, session, settings) {
     setActions(false);
     more.focus();
   });
-  more.setAttribute("aria-label", `More actions for ${script.name}`);
+  more.setAttribute("aria-label", t("moreActionsFor", script.name));
   more.setAttribute("aria-expanded", String(!actions.hidden));
   more.setAttribute("aria-controls", actions.id);
   row.append(details, more, toggle);
@@ -178,11 +180,10 @@ async function render() {
   const menus = tabState.menus ?? {};
   const matching = url ? scripts.filter(script => runsOn(script.source, url) || runs[script.id] || menus[script.id]?.length) : [];
   const active = matching.filter(script => script.enabled).length;
-  count.textContent = !url ? "" : !matching.length ? "No scripts for this site"
-    : `${matching.length} script${matching.length === 1 ? "" : "s"} for this site · ${active} on`;
+  count.textContent = !url ? "" : !matching.length ? t("noScriptsForSite")
+    : matching.length === 1 ? t("scriptsForSiteOne", active) : t("scriptsForSiteMany", matching.length, active);
   empty.hidden = Boolean(url && matching.length);
-  emptyText.textContent = !url ? "Userscripts run only on HTTP and HTTPS pages."
-    : `Nothing runs on ${url.host} yet. Write one, or find scripts others have shared.`;
+  emptyText.textContent = !url ? t("httpOnly") : t("nothingRuns", url.host);
   list.replaceChildren(...matching.map(script => renderScript(script, runs, menus, session, settings)));
   // Scripts that are on but haven't run here usually just need the page reloaded, so say that once, on the button.
   if (list.querySelector('.run[data-state="pending"]')) suggestReload();
@@ -200,12 +201,12 @@ async function setEnabled(script, toggle) {
       await chrome.storage.session.remove("pendingEnable");
       if (!granted) {
         toggle.checked = false;
-        tell("Site access was declined, so the script stays off.");
+        tell(t("accessDeclined"));
         return;
       }
     }
     await send({ type: "toggle", id: script.id, enabled: toggle.checked });
-    tell("Reload the tab to apply this change.", "info");
+    tell(t("reloadTabToApply"), "info");
     suggestReload();
   } catch (error) {
     toggle.checked = !toggle.checked;
@@ -216,7 +217,7 @@ async function setEnabled(script, toggle) {
 paused.addEventListener("change", async () => {
   try {
     await send({ type: "settings", patch: { paused: paused.checked } });
-    tell(paused.checked ? "Scripts are paused. Reload tabs to stop running ones." : "Scripts resumed. Reload to apply.", "info");
+    tell(paused.checked ? t("scriptsPaused") : t("scriptsResumed"), "info");
     suggestReload();
   } catch (error) {
     paused.checked = !paused.checked;
@@ -225,7 +226,7 @@ paused.addEventListener("change", async () => {
 });
 chrome.commands?.getAll().then(commands => {
   const shortcut = commands.find(command => command.name === "toggle-pause")?.shortcut;
-  if (shortcut) $("#pause-label").title = `Shortcut: ${shortcut}`;
+  if (shortcut) $("#pause-label").title = t("shortcutTitle", shortcut);
 });
 reload.addEventListener("click", async () => {
   await chrome.tabs.reload(tab.id);
@@ -249,8 +250,7 @@ $("#manager", HTMLButtonElement).addEventListener("click", () => openManager());
 const footerMenu = $(".footer-menu", HTMLDetailsElement);
 $("#builder", HTMLButtonElement).addEventListener("click", () => {
   footerMenu.open = false;
-  tell("Right-click the page and choose Inspect, then open the Tailorscript tab in the developer tools (it may be under »). " +
-    "Drag parts of the page onto actions such as Hide or Click, then Test and Save.", "info");
+  tell(t("builderHowTo"), "info");
 });
 $("#guide", HTMLButtonElement).addEventListener("click", async () => {
   await chrome.tabs.create({ url: chrome.runtime.getURL("guide/guide.html") });

@@ -9,29 +9,30 @@
   <script type="module" src="popup.js"></script>
 </head>
 <body>
+  <!-- Text comes from _locales through data-i18n; see shared/i18n.js. -->
   <header>
     <h1><img src="../icons/logo.svg" alt="" width="22" height="22">Tailorscript</h1>
-    <label class="switch-label" id="pause-label"><input type="checkbox" role="switch" class="switch" id="paused"> Pause all</label>
+    <label class="switch-label" id="pause-label"><input type="checkbox" role="switch" class="switch" id="paused"> <span data-i18n="pauseAll"></span></label>
   </header>
   <section id="setup" class="card warning" hidden aria-labelledby="setup-title">
-    <h2 id="setup-title">One step before scripts can run</h2>
+    <h2 id="setup-title" data-i18n="setupTitle"></h2>
     <ol>
-      <li>Open Tailorscript’s extension details.</li>
-      <li>Turn on <strong>Allow User Scripts</strong>.</li>
-      <li>Come back and reload your tabs.</li>
+      <li data-i18n="popupSetupStep1"></li>
+      <li data-i18n="setupAllowStep"></li>
+      <li data-i18n="popupSetupStep3"></li>
     </ol>
-    <button id="open-settings" type="button" class="primary">Open extension details</button>
+    <button id="open-settings" type="button" class="primary" data-i18n="openExtensionDetails"></button>
   </section>
   <section id="install-banner" class="card" hidden>
-    <p>This page is a userscript.</p>
-    <button id="install-page" type="button" class="primary">Review and install</button>
+    <p data-i18n="installBannerText"></p>
+    <button id="install-page" type="button" class="primary" data-i18n="reviewAndInstall"></button>
   </section>
   <section class="site" aria-labelledby="page">
     <div>
       <h2 id="page"></h2>
       <p id="count"></p>
     </div>
-    <button id="reload" type="button">Reload</button>
+    <button id="reload" type="button" data-i18n="reload"></button>
   </section>
   <p id="notice" role="status"></p>
   <ul id="scripts"></ul>
@@ -39,16 +40,16 @@
     <p id="empty-text"></p>
   </div>
   <footer>
-    <button id="create" type="button" class="primary">+ New script for this site</button>
+    <button id="create" type="button" class="primary" data-i18n="newScriptForSite"></button>
     <div class="links">
-      <button id="find" type="button" class="link" title="Search Greasy Fork for scripts others shared for this site">Find scripts</button>
-      <button id="manager" type="button" class="link">Open manager</button>
+      <button id="find" type="button" class="link" data-i18n="findScripts" data-i18n-title="findScriptsTitle"></button>
+      <button id="manager" type="button" class="link" data-i18n="openManager"></button>
       <details class="footer-menu">
-        <summary class="link">More</summary>
+        <summary class="link" data-i18n="more"></summary>
         <div class="footer-menu-items">
-          <button id="check" type="button">Check this page</button>
-          <button id="builder" type="button">Build a script without code</button>
-          <button id="guide" type="button">Scripting guide</button>
+          <button id="check" type="button" data-i18n="checkThisPage"></button>
+          <button id="builder" type="button" data-i18n="buildWithoutCode"></button>
+          <button id="guide" type="button" data-i18n="scriptingGuide"></button>
         </div>
       </details>
     </div>

@@ -167,3 +167,28 @@ test("a script the popup asked to turn on is enabled once site access is granted
   assert.equal(find("pending").enabled, false, "an old request is dropped");
   assert.equal((await chrome.storage.session.get("pendingEnable")).pendingEnable, undefined);
 });
+
+const named = name => userscript("void 0;").replace("@name        Test", `@name        ${name}`);
+
+test("imports from other managers bring their values and stay off without site access", async () => {
+  const imported = await call({ type: "import", entries: [
+    { source: named("Carried"), values: { theme: "dark" }, enabled: true },
+    { source: named("Kept off"), enabled: false }
+  ] });
+  assert.ok(imported.ok, imported.error);
+  const carried = storedScripts().find(script => script.name === "Carried");
+  assert.equal(carried.enabled, true, "its sites were already granted");
+  assert.deepEqual(local[`values:${carried.id}`], { theme: "dark" });
+  assert.equal(storedScripts().find(script => script.name === "Kept off").enabled, false);
+
+  const contains = chrome.permissions.contains;
+  chrome.permissions.contains = async () => false;
+  try {
+    await call({ type: "import", entries: [{ source: named("No access"), enabled: true, values: { big: "x".repeat(1024 * 1024) } }] });
+  } finally {
+    chrome.permissions.contains = contains;
+  }
+  const blocked = storedScripts().find(script => script.name === "No access");
+  assert.equal(blocked.enabled, false);
+  assert.equal(local[`values:${blocked.id}`], undefined, "values over 1 MB are left out");
+});

@@ -3,11 +3,15 @@ const timings = { "document-start": "document_start", "document-end": "document_
 // Each API family lists the grant spellings that turn it on. Scripts written for other managers use either style.
 export const grantFamilies = {
   addStyle: ["GM_addStyle", "GM.addStyle"],
-  getValue: ["GM.getValue", "GM_getValue"],
-  setValue: ["GM.setValue", "GM_setValue"],
-  deleteValue: ["GM.deleteValue", "GM_deleteValue"],
+  addElement: ["GM_addElement", "GM.addElement"],
+  log: ["GM_log", "GM.log"],
+  getValue: ["GM.getValue", "GM_getValue", "GM.getValues", "GM_getValues"],
+  setValue: ["GM.setValue", "GM_setValue", "GM.setValues", "GM_setValues"],
+  deleteValue: ["GM.deleteValue", "GM_deleteValue", "GM.deleteValues", "GM_deleteValues"],
   listValues: ["GM.listValues", "GM_listValues"],
+  valueListener: ["GM_addValueChangeListener", "GM_removeValueChangeListener", "GM.addValueChangeListener", "GM.removeValueChangeListener"],
   xhr: ["GM_xmlhttpRequest", "GM.xmlHttpRequest"],
+  download: ["GM_download", "GM.download"],
   menu: ["GM_registerMenuCommand", "GM.registerMenuCommand", "GM_unregisterMenuCommand", "GM.unregisterMenuCommand"],
   notification: ["GM_notification", "GM.notification"],
   clipboard: ["GM_setClipboard", "GM.setClipboard"],
@@ -15,12 +19,17 @@ export const grantFamilies = {
   resources: ["GM_getResourceText", "GM.getResourceText", "GM_getResourceURL", "GM.getResourceUrl"],
   info: ["GM_info", "GM.info"],
   unsafeWindow: ["unsafeWindow"],
-  window: ["window.close", "window.focus"]
+  window: ["window.close", "window.focus"],
+  urlChange: ["window.onurlchange"]
 };
 export const supportedGrants = ["none", ...Object.values(grantFamilies).flat()];
 // Synchronous value getters need a snapshot of stored values when the script starts.
-export const syncValueGrants = ["GM_getValue", "GM_setValue", "GM_deleteValue", "GM_listValues"];
-const pageGrants = ["none", "unsafeWindow", ...grantFamilies.addStyle, ...grantFamilies.info, ...grantFamilies.window];
+// Change listeners report the value before the change, so they need the snapshot too.
+export const syncValueGrants = ["GM_getValue", "GM_setValue", "GM_deleteValue", "GM_listValues", "GM_getValues", "GM_setValues",
+  "GM_deleteValues", ...grantFamilies.valueListener];
+// APIs that work without the extension, so scripts injected into the page itself can use them.
+const pageGrants = ["none", "unsafeWindow", ...grantFamilies.addStyle, ...grantFamilies.addElement, ...grantFamilies.log,
+  ...grantFamilies.info, ...grantFamilies.window, ...grantFamilies.urlChange];
 
 export function allows(grants, family) {
   return grantFamilies[family].some(grant => grants.includes(grant));

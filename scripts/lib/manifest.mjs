@@ -56,9 +56,30 @@ async function checkReferences(dir, errors) {
   }
 }
 
+// Replaces __MSG_key__ in the manifest's text with the default language's message, so limits apply to real text.
+async function resolveMessages(dir, manifest, errors) {
+  if (!JSON.stringify(manifest).includes("__MSG_")) return manifest;
+  if (!manifest.default_locale) {
+    errors.push("The manifest uses __MSG_ messages but has no default_locale.");
+    return manifest;
+  }
+  const file = path.join(dir, "_locales", manifest.default_locale, "messages.json");
+  if (!await exists(file)) {
+    errors.push(`_locales/${manifest.default_locale}/messages.json does not exist.`);
+    return manifest;
+  }
+  const messages = await readJson(file);
+  return JSON.parse(JSON.stringify(manifest), (key, value) => typeof value !== "string" ? value
+    : value.replace(/__MSG_(\w+)__/g, (text, name) => {
+      if (messages[name]?.message) return messages[name].message;
+      errors.push(`The manifest refers to a missing message, ${name}.`);
+      return text;
+    }));
+}
+
 export async function validateExtension(dir, { version } = {}) {
   const errors = [];
-  const manifest = await readJson(path.join(dir, "manifest.json"));
+  const manifest = await resolveMessages(dir, await readJson(path.join(dir, "manifest.json")), errors);
   if (manifest.manifest_version !== 3) errors.push("manifest_version must be 3.");
   for (const [field, limit] of Object.entries(limits)) {
     if (field === "name" && !manifest.name) errors.push("name is required.");

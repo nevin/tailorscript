@@ -1,0 +1,317 @@
+{
+  "appName": {
+    "message": "Tailorscript – Userscript Manager",
+    "description": "Extension name in Chrome and the Web Store"
+  },
+  "appShortName": {
+    "message": "Tailorscript",
+    "description": "Short extension name"
+  },
+  "appDescription": {
+    "message": "Tailor websites with your own JavaScript. A private userscript manager that keeps scripts in your browser.",
+    "description": "Extension description, at most 132 characters"
+  },
+  "actionTitle": {
+    "message": "Tailorscript",
+    "description": "Toolbar button tooltip"
+  },
+  "commandTogglePause": {
+    "message": "Pause or resume all scripts",
+    "description": "Keyboard shortcut description"
+  },
+  "setupTitle": {
+    "message": "One step before scripts can run"
+  },
+  "setupAllowStep": {
+    "message": "Turn on *Allow User Scripts*.",
+    "description": "Words between asterisks are shown in bold"
+  },
+  "openExtensionDetails": {
+    "message": "Open extension details"
+  },
+  "pauseAll": {
+    "message": "Pause all"
+  },
+  "popupSetupStep1": {
+    "message": "Open Tailorscript’s extension details."
+  },
+  "popupSetupStep3": {
+    "message": "Come back and reload your tabs."
+  },
+  "installBannerText": {
+    "message": "This page is a userscript."
+  },
+  "reviewAndInstall": {
+    "message": "Review and install"
+  },
+  "reload": {
+    "message": "Reload"
+  },
+  "reloadToApply": {
+    "message": "Reload to apply",
+    "description": "Reload button label when the page needs reloading"
+  },
+  "newScriptForSite": {
+    "message": "+ New script for this site"
+  },
+  "findScripts": {
+    "message": "Find scripts"
+  },
+  "findScriptsTitle": {
+    "message": "Search Greasy Fork for scripts others shared for this site"
+  },
+  "openManager": {
+    "message": "Open manager"
+  },
+  "more": {
+    "message": "More"
+  },
+  "checkThisPage": {
+    "message": "Check this page"
+  },
+  "buildWithoutCode": {
+    "message": "Build a script without code"
+  },
+  "scriptingGuide": {
+    "message": "Scripting guide"
+  },
+  "pageCannotRun": {
+    "message": "This page can’t run userscripts"
+  },
+  "workerNoAnswer": {
+    "message": "Tailorscript’s background worker didn’t answer. Close and reopen this popup. If it happens again, reload Tailorscript in chrome://extensions."
+  },
+  "ranAgo": {
+    "message": "Ran $p1$",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    },
+    "description": "$1 is a time such as “2 minutes ago”"
+  },
+  "runsOnRunNow": {
+    "message": "Runs when you choose Run now"
+  },
+  "stateOff": {
+    "message": "Off"
+  },
+  "statePaused": {
+    "message": "Paused"
+  },
+  "errorOnLine": {
+    "message": "Error on line $p1$: $p2$",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      },
+      "p2": {
+        "content": "$2"
+      }
+    },
+    "description": "$1 is a line number, $2 the error message"
+  },
+  "errorPlain": {
+    "message": "Error: $p1$",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    },
+    "description": "$1 is the error message"
+  },
+  "updateWaiting": {
+    "message": "Update to v$p1$ is waiting for review",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    },
+    "description": "$1 is a version number"
+  },
+  "notRunYet": {
+    "message": "Hasn’t run on this page yet"
+  },
+  "enableScript": {
+    "message": "Enable $p1$",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    },
+    "description": "$1 is a script name"
+  },
+  "runNow": {
+    "message": "Run now"
+  },
+  "sentToPage": {
+    "message": "Sent “$p1$” to this page.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    },
+    "description": "$1 is a script name"
+  },
+  "edit": {
+    "message": "Edit"
+  },
+  "dontRunOn": {
+    "message": "Don’t run on $p1$",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    },
+    "description": "$1 is a site name"
+  },
+  "confirmExclude": {
+    "message": "Stop “$p1$” from running on $p2$? This adds an @exclude-match line you can remove in the editor.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      },
+      "p2": {
+        "content": "$2"
+      }
+    },
+    "description": "$1 is a script name, $2 a site name"
+  },
+  "excluded": {
+    "message": "“$p1$” won’t run on $p2$. Reload to apply.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      },
+      "p2": {
+        "content": "$2"
+      }
+    },
+    "description": "$1 is a script name, $2 a site name"
+  },
+  "moreActionsFor": {
+    "message": "More actions for $p1$",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    },
+    "description": "$1 is a script name"
+  },
+  "noScriptsForSite": {
+    "message": "No scripts for this site"
+  },
+  "scriptsForSiteOne": {
+    "message": "1 script for this site · $p1$ on",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    },
+    "description": "$1 is how many are turned on"
+  },
+  "scriptsForSiteMany": {
+    "message": "$p1$ scripts for this site · $p2$ on",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      },
+      "p2": {
+        "content": "$2"
+      }
+    },
+    "description": "$1 is how many scripts, $2 how many are turned on"
+  },
+  "httpOnly": {
+    "message": "Userscripts run only on HTTP and HTTPS pages."
+  },
+  "nothingRuns": {
+    "message": "Nothing runs on $p1$ yet. Write one, or find scripts others have shared.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    },
+    "description": "$1 is a site name"
+  },
+  "accessDeclined": {
+    "message": "Site access was declined, so the script stays off."
+  },
+  "reloadTabToApply": {
+    "message": "Reload the tab to apply this change."
+  },
+  "scriptsPaused": {
+    "message": "Scripts are paused. Reload tabs to stop running ones."
+  },
+  "scriptsResumed": {
+    "message": "Scripts resumed. Reload to apply."
+  },
+  "shortcutTitle": {
+    "message": "Shortcut: $p1$",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    },
+    "description": "$1 is a keyboard shortcut"
+  },
+  "builderHowTo": {
+    "message": "Right-click the page and choose Inspect, then open the Tailorscript tab in the developer tools (it may be under »). Drag parts of the page onto actions such as Hide or Click, then Test and Save."
+  },
+  "welcomePageTitle": {
+    "message": "Welcome · Tailorscript",
+    "description": "Browser tab title"
+  },
+  "welcomeTitle": {
+    "message": "Welcome to Tailorscript"
+  },
+  "welcomeLede": {
+    "message": "Change how websites look and behave with small scripts that stay in your browser."
+  },
+  "welcomeSetupNote": {
+    "message": "Chrome keeps userscripts off until you allow them for Tailorscript."
+  },
+  "welcomeStep1": {
+    "message": "Choose *Open extension details*.",
+    "description": "Words between asterisks are shown in bold"
+  },
+  "welcomeStep3": {
+    "message": "Come back to this tab. It checks again by itself."
+  },
+  "checking": {
+    "message": "Checking…"
+  },
+  "setupDone": {
+    "message": "Chrome is set up"
+  },
+  "setupReady": {
+    "message": "✓ Userscripts are allowed. You’re ready."
+  },
+  "setupNotYet": {
+    "message": "Not allowed yet."
+  },
+  "setupCheckFailed": {
+    "message": "Couldn’t check. Reload this tab."
+  },
+  "welcomeStartTitle": {
+    "message": "Then pick a way to start"
+  },
+  "startTemplate": {
+    "message": "Start from a template"
+  },
+  "startTemplateHint": {
+    "message": "Hide clutter, add styles, click buttons and more."
+  },
+  "startBuilder": {
+    "message": "Build one without code"
+  },
+  "startBuilderHint": {
+    "message": "Right-click any page, choose Inspect, then the Tailorscript tab."
+  },
+  "startGuide": {
+    "message": "Read the scripting guide"
+  },
+  "startGuideHint": {
+    "message": "What a userscript is, with an example for everything."
+  }
+}

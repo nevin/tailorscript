@@ -35,7 +35,7 @@
         <p>A <strong>userscript</strong> is a small piece of JavaScript that Tailorscript runs for you on the websites you choose. It can restyle a page, hide clutter, add a button, fill in a form or fetch extra information: anything you could do by typing JavaScript into the browser's console, done automatically each time the page loads.</p>
         <p>You don't need to know JavaScript well to begin. Most useful scripts are a few lines long, and every example in this guide is a complete script you can copy, change and run.</p>
         <p>Every userscript has two parts:</p>
-        <pre class="code" id="anatomy"></pre>
+        <pre class="code" id="anatomy" tabindex="0"></pre>
         <ul>
           <li><strong>The header</strong> is the block of comments between <code>==UserScript==</code> and <code>==/UserScript==</code>. It tells Tailorscript the script's name, which pages it runs on and which extra abilities it needs.</li>
           <li><strong>The code</strong> is everything after the header. It is ordinary JavaScript that runs on the page.</li>
@@ -76,7 +76,7 @@
           <li><strong>Ask for it in the header</strong> with a <code>@grant</code> line naming the function.</li>
           <li><strong>Call it in your code</strong> like any other function.</li>
         </ol>
-        <pre class="code" id="grant-example"></pre>
+        <pre class="code" id="grant-example" tabindex="0"></pre>
         <p>The <code>@grant</code> line is there so that anyone reading a script, including you before installing one, can see at a glance what it is able to do. If you call an API you haven't asked for, the editor underlines it and offers to add the line.</p>
         <h3>Two spellings</h3>
         <p>Most APIs come in two forms that do the same job:</p>
