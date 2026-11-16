@@ -4,6 +4,11 @@ All notable changes to Tailorscript are recorded here. Versions follow [Semantic
 
 ## [Unreleased]
 
+## [0.9.1]
+
+### Fixed
+- Import and run userscripts with explicit ports in HTTP and HTTPS match rules. Port-specific matches and exclusions retain their scope.
+
 ## [0.9.0]
 
 ### Added

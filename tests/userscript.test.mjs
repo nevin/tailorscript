@@ -123,3 +123,15 @@ test("insecureSources lists code fetched over plain http", () => {
   assert.deepEqual(insecureSources(metadata, "http://x.org/s.user.js"), ["http://x.org/s.user.js", "http://cdn.x/lib.js", "http://cdn.x/a.css"]);
   assert.deepEqual(insecureSources(parseSource(header(["@match https://a.com/*"]))), []);
 });
+
+test("explicit HTTP(S) ports are preserved and checked independently of the host", () => {
+  const pattern = "http://localhost:3000/*";
+  assert.ok(matchesUrl(pattern, new URL("http://localhost:3000/page")));
+  assert.equal(matchesUrl(pattern, new URL("http://localhost:3001/page")), false);
+  assert.ok(matchesUrl("https://example.com:443/*", new URL("https://example.com/page")));
+  assert.ok(matchesUrl("http://localhost:*/*", new URL("http://localhost:3001/page")));
+  const source = `// ==UserScript==\n// @match ${pattern}\n// @include /other/\n// ==/UserScript==\nvoid 0;`;
+  assert.ok(runsOn(source, new URL("http://localhost:3000/page")));
+  assert.equal(runsOn(source, new URL("http://localhost:3001/page")), false);
+  assert.throws(() => parseSource(source.replace(":3000", ":65536")), /Invalid HTTP/);
+});

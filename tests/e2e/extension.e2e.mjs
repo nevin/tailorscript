@@ -398,8 +398,8 @@ test("extension pages have no accessibility violations axe can find", async () =
   assert.deepEqual(found, []);
 });
 
-test("a Tampermonkey backup imports with its values and runs once turned on", async () => {
-  const source = header("From Tampermonkey", ["match http://localhost/*", "grant GM_getValue", "grant GM_addElement"]) +
+test("a Tampermonkey backup with an explicit HTTP port imports its values and runs", async () => {
+  const source = header("From Tampermonkey", [`match http://localhost:${port}/*`, "grant GM_getValue", "grant GM_addElement"]) +
     'GM_addElement(document.body, "p", { id: "imported", textContent: GM_getValue("greeting", "missing") });';
   const backup = zip({
     "From Tampermonkey.user.js": source,

@@ -35,7 +35,7 @@ export function allows(grants, family) {
   return grantFamilies[family].some(grant => grants.includes(grant));
 }
 
-const matchPattern = /^(https?|\*):\/\/(?:\*|(?:\*\.)?[a-z\d-]+(?:\.[a-z\d-]+)*)\/\S*$/i;
+const matchPattern = /^(https?|\*):\/\/(\*|(?:\*\.)?[a-z\d-]+(?:\.[a-z\d-]+)*)(?::(\*|\d{1,5}))?(\/\S*)$/i;
 const allSites = "*://*/*";
 
 function escapeRegExp(text) {
@@ -47,10 +47,17 @@ function globToRegExp(glob) {
 }
 
 function matchToRegExp(pattern) {
-  const [, scheme, host, path] = pattern.match(/^(.*?):\/\/([^/]+)(\/.*)$/);
-  const hostPart = host === "*" ? "[^/]*"
-    : host.startsWith("*.") ? `(?:[^/]*\\.)?${escapeRegExp(host.slice(2))}` : escapeRegExp(host);
-  return `^${scheme === "*" ? "https?" : scheme}://${hostPart}(?::\\d+)?${path.split("*").map(escapeRegExp).join(".*")}$`;
+  const [, scheme, host, port, path] = pattern.match(matchPattern);
+  const hostPart = host === "*" ? "[^/:]*"
+    : host.startsWith("*.") ? `(?:[^/:]*\\.)?${escapeRegExp(host.slice(2))}` : escapeRegExp(host);
+  const schemes = scheme === "*" ? ["http", "https"] : [scheme.toLowerCase()];
+  const origins = schemes.map(protocol => {
+    const defaultPort = protocol === "http" ? 80 : 443;
+    const portPart = !port || port === "*" ? "(?::\\d+)?"
+      : Number(port) === defaultPort ? `(?::${defaultPort})?` : `:${Number(port)}`;
+    return `${protocol}://${hostPart}${portPart}`;
+  });
+  return `^(?:${origins.join("|")})${path.split("*").map(escapeRegExp).join(".*")}$`;
 }
 
 function matchToGlobs(pattern) {
@@ -77,7 +84,7 @@ function parseRule(rule) {
   const parts = glob.match(/^(\*|https?|http\*):\/\/([^/]*)(?:\/.*)?$/i);
   if (!parts) return { glob, match: allSites };
   const scheme = /^https?$/i.test(parts[1]) ? parts[1].toLowerCase() : "*";
-  const host = parts[2].replace(/:\d+$/, "").toLowerCase();
+  const host = parts[2].replace(/:(?:\d+|\*)$/, "").toLowerCase();
   const exactHost = host && !host.slice(host.startsWith("*.") ? 2 : 0).includes("*") ? host : "*";
   return { glob, match: `${scheme}://${exactHost}/*` };
 }
@@ -88,7 +95,7 @@ function buildTargets(declaredMatches, includes, excludes, excludeMatches) {
   }
   const rules = includes.map(parseRule);
   const matches = [...new Set([...declaredMatches, ...rules.map(rule => rule.match)])];
-  if (rules.some(rule => rule.regex)) {
+  if (rules.some(rule => rule.regex) || declaredMatches.some(pattern => pattern.match(matchPattern)[3])) {
     const include = [
       ...declaredMatches.map(pattern => ({ source: matchToRegExp(pattern), flags: "" })),
       ...rules.map(rule => rule.regex ?? { source: globToRegExp(rule.glob), flags: "" })
@@ -168,7 +175,8 @@ export function parseSource(source) {
     throw new Error("Add an @match line for the site where this script should run.");
   }
   for (const pattern of [...declaredMatches, ...excludeMatches]) {
-    if (!matchPattern.test(pattern)) throw new Error(`Invalid HTTP(S) match pattern: ${pattern}`);
+    const parts = pattern.match(matchPattern);
+    if (!parts || Number(parts[3]) > 65535) throw new Error(`Invalid HTTP(S) match pattern: ${pattern}`);
   }
   const targets = finishTargets(buildTargets(declaredMatches, includes, all("exclude"), excludeMatches));
 
@@ -237,8 +245,12 @@ export function originsFor(matches) {
 }
 
 export function matchesUrl(pattern, url) {
-  const [, scheme, host, path] = pattern.match(/^(.*?):\/\/([^/]+)(\/.*)$/);
+  const parts = pattern.match(matchPattern);
+  if (!parts) return false;
+  const [, scheme, host, port, path] = parts;
   if (scheme !== "*" && url.protocol !== scheme.toLowerCase() + ":") return false;
+  const effectivePort = Number(url.port || (url.protocol === "http:" ? 80 : 443));
+  if (port && port !== "*" && Number(port) !== effectivePort) return false;
   const domain = host.toLowerCase();
   const hostname = url.hostname;
   if (domain !== "*" && domain !== hostname &&
