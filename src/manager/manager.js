@@ -63,6 +63,11 @@ const filter = {
     $(`input[name="filter"][value="${next}"]`, HTMLInputElement).checked = true;
   }
 };
+const resultCount = $("#result-count");
+const clearFilters = $("#clear-filters", HTMLButtonElement);
+const filterCounts = [...document.querySelectorAll("[data-count]")];
+const groupScripts = $("#group-scripts", HTMLSelectElement);
+const setupTags = $("#setup-tags", HTMLInputElement);
 const tagFilter = $("#tag", HTMLSelectElement);
 const sort = $("#sort", HTMLSelectElement);
 const empty = $("#library-empty");
@@ -143,6 +148,32 @@ const source = createCodeEditor($("#editor"), {
   onDiagnostics: renderProblems
 });
 validation.addEventListener("click", () => source.openProblems());
+$("#editor-validate", HTMLButtonElement).addEventListener("click", () => {
+  try {
+    validate(source.value);
+    status.textContent = "JavaScript syntax and userscript metadata are valid.";
+  } catch (error) {
+    source.openProblems();
+    status.textContent = error.message;
+  }
+});
+$("#editor-find", HTMLButtonElement).addEventListener("click", () => source.openSearch());
+$("#editor-jump", HTMLButtonElement).addEventListener("click", () => source.jumpToLine());
+const editorWrap = $("#editor-wrap", HTMLInputElement);
+editorWrap.addEventListener("change", () => source.setLineWrapping(editorWrap.checked));
+const editorEdits = $("#editor-edits", HTMLDetailsElement);
+editorEdits.addEventListener("click", event => {
+  const target = event.target;
+  if (!(target instanceof HTMLButtonElement) || !target.dataset.edit) return;
+  editorEdits.open = false;
+  source.runEdit(target.dataset.edit);
+});
+editorEdits.addEventListener("keydown", event => {
+  if (event.key !== "Escape" || !editorEdits.open) return;
+  event.preventDefault();
+  editorEdits.open = false;
+  editorEdits.querySelector("summary").focus();
+});
 
 function select(script, preserveCaret = false, template = starter) {
   selectedId = script?.id;
@@ -273,10 +304,15 @@ function renderTags(entries) {
 function renderLibrary() {
   const query = search.value.trim().toLowerCase();
   const page = checkedPage();
-  const entries = scripts.map((script, index) => ({ script, index, metadata: metadataFor(script) }));
+  const entries = scripts.map(script => ({ script, metadata: metadataFor(script), status: scriptStatus(script) }));
+  const totals = { all: entries.length, enabled: 0, disabled: 0, attention: 0 };
+  for (const { script, status } of entries) {
+    totals[script.enabled ? "enabled" : "disabled"]++;
+    if (["warning", "error"].includes(status.state)) totals.attention++;
+  }
+  for (const counter of filterCounts) counter.textContent = String(totals[counter.getAttribute("data-count")]);
   renderTags(entries);
-  const visible = entries.filter(({ script, metadata }) => {
-    const { state } = scriptStatus(script);
+  const visible = entries.filter(({ script, metadata, status: { state } }) => {
     if (filter.value === "enabled" && !script.enabled) return false;
     if (filter.value === "disabled" && script.enabled) return false;
     if (filter.value === "attention" && !["warning", "error"].includes(state)) return false;
@@ -288,13 +324,19 @@ function renderLibrary() {
   });
   if (sort.value === "name") visible.sort((a, b) => a.script.name.localeCompare(b.script.name));
   if (sort.value === "recent") visible.sort((a, b) => (b.script.updatedAt ?? 0) - (a.script.updatedAt ?? 0));
+  resultCount.textContent = visible.length === scripts.length
+    ? `${scripts.length} ${scripts.length === 1 ? "script" : "scripts"}`
+    : `${visible.length} of ${scripts.length} scripts`;
+  clearFilters.hidden = !(search.value || tagFilter.value || filter.value !== "all");
   library.classList.toggle("is-empty", !scripts.length);
+  list.hidden = !visible.length;
   welcome.hidden = scripts.length > 0;
   pageFilter.hidden = !page && filter.value !== "page";
   empty.textContent = visible.length || !scripts.length ? ""
     : filter.value === "page" && !page ? "Enter a page under Check a page to filter by it."
     : "No scripts match these filters.";
-  list.replaceChildren(...visible.map(({ script, metadata }) => {
+  const groups = new Map();
+  const rows = visible.map(({ script, metadata, status }) => {
     const row = document.createElement("div");
     row.className = "script-row";
     const toggle = document.createElement("input");
@@ -307,7 +349,6 @@ function renderLibrary() {
     toggle.addEventListener("change", () => setEnabled(script, toggle.checked));
     const button = document.createElement("button");
     button.type = "button";
-    const status = scriptStatus(script);
     const meta = element("span", undefined, "script-meta");
     // "Active" is the usual case, so the row only says so when there is something more to tell.
     if (status.detail !== "Active · hasn’t run yet") {
@@ -317,7 +358,11 @@ function renderLibrary() {
     }
     meta.append(element("span", siteSummary(metadata), "script-sites"));
     if (script.pendingUpdate) meta.append(element("span", "Update available", "script-update"));
-    if (metadata?.tags.length) meta.append(element("span", metadata.tags.map(tag => `#${tag}`).join(" "), "script-tags"));
+    if (metadata?.tags.length) {
+      const tags = element("span", undefined, "script-tags");
+      tags.append(...metadata.tags.map(tag => element("span", tag, "library-tag")));
+      meta.append(tags);
+    }
     button.append(element("span", script.name, "script-name"), meta);
     button.title = registrationState?.issues[script.id] ?? runs[script.id]?.error?.message ?? "";
     button.setAttribute("aria-pressed", String(script.id === selectedId));
@@ -328,8 +373,28 @@ function renderLibrary() {
       }
     });
     row.append(button, toggle);
+    if (groupScripts.value) {
+      const value = groupScripts.value === "tag" ? metadata?.tags[0]
+        : metadata?.matches[0]?.split("/")[2];
+      const key = value || "";
+      const groupName = value === "*" ? "All sites" : value ||
+        (groupScripts.value === "tag" ? "Untagged" : "Other sites");
+      if (!groups.has(key)) {
+        const group = document.createElement("section");
+        const heading = element("h3", groupName, "script-group-title");
+        heading.id = `script-group-${groups.size}`;
+        group.setAttribute("aria-labelledby", heading.id);
+        group.append(heading);
+        groups.set(key, group);
+      }
+      groups.get(key).append(row);
+    }
     return row;
-  }));
+  });
+  for (const group of groups.values()) {
+    group.firstElementChild.append(element("span", String(group.childElementCount - 1), "group-count"));
+  }
+  list.replaceChildren(...(groupScripts.value ? groups.values() : rows));
 }
 
 function renderBackupState() {
@@ -371,8 +436,10 @@ function render() {
 }
 
 function populateSetup() {
+  setupTags.value = "";
   try {
     const metadata = parseSource(source.value);
+    setupTags.value = metadata.tags.join(", ");
     setupName.value = metadata.name;
     setupSites.value = metadata.matches.join("\n");
   } catch {
@@ -483,7 +550,14 @@ function sendSettings(patch) {
 }
 
 search.addEventListener("input", renderLibrary);
-for (const control of [tagFilter, sort, ...document.querySelectorAll('input[name="filter"]')]) {
+clearFilters.addEventListener("click", () => {
+  search.value = "";
+  tagFilter.value = "";
+  $("input[name='filter'][value='all']", HTMLInputElement).checked = true;
+  renderLibrary();
+  search.focus();
+});
+for (const control of [groupScripts, tagFilter, sort, ...document.querySelectorAll('input[name="filter"]')]) {
   control.addEventListener("change", renderLibrary);
 }
 enabled.addEventListener("change", updateDraftState);
@@ -506,11 +580,12 @@ setupName.addEventListener("keydown", event => {
 applySetup.addEventListener("click", () => {
   try {
     const patterns = setupSites.value.split("\n").map(line => line.trim()).filter(Boolean);
-    const next = updateTargets(source.value, setupName.value, patterns);
+    const tags = setupTags.value.split(/[\s,]+/).filter(Boolean);
+    const next = updateTargets(source.value, setupName.value, patterns, tags);
     parseSource(next + "\n;");
     source.replace(next);
     setup.open = false;
-    status.textContent = "Site settings applied to the draft. Save to use them.";
+    status.textContent = "Script settings applied to the draft. Save to use them.";
     source.focus();
   } catch (error) {
     status.textContent = error.message;

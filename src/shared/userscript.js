@@ -310,13 +310,17 @@ export function addMetadata(source, key, value) {
 }
 
 // Preserve the source body and metadata unrelated to the guided fields.
-export function updateTargets(source, name, patterns) {
+/** @param {string} source @param {string} name @param {string[]} patterns @param {string[]} [tags] */
+export function updateTargets(source, name, patterns, tags) {
   const lines = source.split("\n");
   const start = lines.findIndex(line => /^\s*\/\/\s*==UserScript==\s*$/.test(line));
   const end = lines.findIndex((line, index) => index > start && /^\s*\/\/\s*==\/UserScript==\s*$/.test(line));
   if ((start < 0) !== (end < 0)) throw new Error("Complete the userscript metadata block before applying these settings.");
   const metadata = [headerLine("name", name.trim() || "Untitled script"), ...patterns.map(pattern => headerLine("match", pattern))];
+  if (tags) metadata.push(...new Set(tags.map(tag => headerLine("tag", tag))));
   if (start < 0) return ["// ==UserScript==", ...metadata, "// ==/UserScript==", "", source].join("\n");
-  const other = lines.slice(start + 1, end).filter(line => !/^\s*\/\/\s*@(name|match)(?:\s|$)/.test(line));
+  const other = lines.slice(start + 1, end).filter(line =>
+    !/^\s*\/\/\s*@(name|match)(?:\s|$)/.test(line) &&
+    !(tags && /^\s*\/\/\s*@tag(?:\s|$)/.test(line)));
   return [...lines.slice(0, start + 1), ...metadata, ...other, ...lines.slice(end)].join("\n");
 }

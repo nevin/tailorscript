@@ -1,11 +1,11 @@
 // The script editor: CodeMirror with JavaScript support plus userscript-aware completions, problems, docs and hints.
 import {
   autocompletion, bracketMatching, closeBrackets, closeBracketsKeymap, completeFromList, completionKeymap, crosshairCursor,
-  Decoration, defaultKeymap, drawSelection, dropCursor, EditorState, EditorView, foldGutter, foldKeymap, forceLinting,
+  Compartment, Decoration, defaultKeymap, drawSelection, dropCursor, EditorState, EditorView, foldGutter, foldKeymap, forceLinting, gotoLine,
   highlightActiveLine, highlightActiveLineGutter, highlightSelectionMatches, highlightSpecialChars, HighlightStyle, history,
   historyKeymap, hoverTooltip, ifNotIn, indentOnInput, indentUnit, indentWithTab, javascript, keymap, lineNumbers, linter,
   lintGutter, lintKeymap, localCompletionSource, openLintPanel, openSearchPanel, rectangularSelection, scopeCompletionSource,
-  search, searchKeymap, showTooltip, snippetCompletion, snippets, StateField, syntaxHighlighting, syntaxTree, tags, ViewPlugin
+  search, searchKeymap, showTooltip, snippetCompletion, snippets, StateField, syntaxHighlighting, syntaxTree, tags, toggleComment, indentMore, indentLess, ViewPlugin
 } from "../vendor/codemirror/codemirror.js";
 import { userscriptSnippets } from "./gm-api.js";
 import { metadataField, signatureInState } from "./editor-state.js";
@@ -126,6 +126,8 @@ const signatureHints = StateField.define({
  */
 export function createCodeEditor(parent, { onChange, onCursor, onDiagnostics } = {}) {
   let runError = null;
+  let wrapping = false;
+  const wrapConfig = new Compartment();
 
   const problems = linter(view => {
     const length = view.state.doc.length;
@@ -141,6 +143,7 @@ export function createCodeEditor(parent, { onChange, onCursor, onDiagnostics } =
   }, { delay: 300 });
 
   const extensions = [
+    wrapConfig.of([]),
     lineNumbers(), highlightActiveLineGutter(), foldGutter(), lintGutter(), highlightSpecialChars(), history(), drawSelection(),
     dropCursor(), EditorState.allowMultipleSelections.of(true), indentOnInput(), indentUnit.of("  "), EditorState.tabSize.of(2),
     syntaxHighlighting(highlightStyle), bracketMatching(), closeBrackets(), rectangularSelection(), crosshairCursor(),
@@ -176,6 +179,7 @@ export function createCodeEditor(parent, { onChange, onCursor, onDiagnostics } =
     // Opens a different script: a fresh state, so undo can't step back into the previous one.
     load(text) {
       view.setState(EditorState.create({ doc: text, extensions }));
+      if (wrapping) view.dispatch({ effects: wrapConfig.reconfigure(EditorView.lineWrapping) });
       view.scrollDOM.scrollTop = 0;
       view.scrollDOM.scrollLeft = 0;
       onCursor?.({ line: 1, column: 1 });
@@ -197,6 +201,19 @@ export function createCodeEditor(parent, { onChange, onCursor, onDiagnostics } =
       if (runError?.line === error?.line && runError?.message === error?.message) return;
       runError = error?.line ? error : null;
       forceLinting(view);
+    },
+    jumpToLine() {
+      view.focus();
+      gotoLine(view);
+    },
+    setLineWrapping(enabled) {
+      wrapping = enabled;
+      view.dispatch({ effects: wrapConfig.reconfigure(enabled ? EditorView.lineWrapping : []) });
+    },
+    runEdit(command) {
+      const edits = { comment: toggleComment, indent: indentMore, outdent: indentLess };
+      edits[command](view);
+      view.focus();
     },
     openSearch() {
       openSearchPanel(view);

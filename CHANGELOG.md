@@ -4,6 +4,16 @@ All notable changes to Tailorscript are recorded here. Versions follow [Semantic
 
 ## [Unreleased]
 
+## [0.9.0]
+
+### Added
+- Script library dashboard with status counts, a filtered result count, and a clear-filters action.
+- Group scripts by primary site or first tag, and edit tags in the script setup form.
+- Editor toolbar with Find and replace, Go to line, line wrapping, commenting, indentation, syntax validation, and single-script download.
+
+### Fixed
+- Creating a script from the popup on an HTTP site with a custom port now generates a valid site match rule.
+
 ## [0.8.0]
 
 ### Added

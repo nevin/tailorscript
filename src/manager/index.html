@@ -57,10 +57,10 @@
       <label class="sr-only" for="search">Search scripts</label>
       <input id="search" type="search" placeholder="Search name, site or tag">
       <div class="chips" role="radiogroup" aria-label="Show">
-        <label><input type="radio" name="filter" value="all" checked> All</label>
-        <label><input type="radio" name="filter" value="enabled"> On</label>
-        <label><input type="radio" name="filter" value="disabled"> Off</label>
-        <label><input type="radio" name="filter" value="attention"> Issues</label>
+        <label><input type="radio" name="filter" value="all" checked> All <span class="filter-count" data-count="all"></span></label>
+        <label><input type="radio" name="filter" value="enabled"> Enabled <span class="filter-count" data-count="enabled"></span></label>
+        <label><input type="radio" name="filter" value="disabled"> Disabled <span class="filter-count" data-count="disabled"></span></label>
+        <label><input type="radio" name="filter" value="attention"> Issues <span class="filter-count" data-count="attention"></span></label>
         <label id="page-filter" hidden><input type="radio" name="filter" value="page"> Checked page</label>
       </div>
       <div class="library-filters">
@@ -72,6 +72,17 @@
           <option value="name">Name</option>
           <option value="recent">Recently edited</option>
         </select>
+      </div>
+      <label class="library-group">Group by
+        <select id="group-scripts">
+          <option value="">None</option>
+          <option value="tag">First tag</option>
+          <option value="site">Primary site</option>
+        </select>
+      </label>
+      <div class="library-results">
+        <p id="result-count" role="status"></p>
+        <button id="clear-filters" type="button" class="ghost" hidden>Clear filters</button>
       </div>
       <div id="scripts"></div>
       <p id="library-empty"></p>
@@ -104,7 +115,6 @@
               <button id="history" type="button" role="menuitem" hidden>Version history…</button>
               <button id="values" type="button" role="menuitem" hidden>Stored values…</button>
               <button id="updates" type="button" role="menuitem" hidden>Updates…</button>
-              <button id="download-script" type="button" role="menuitem">Download as .user.js</button>
               <button id="copy-script" type="button" role="menuitem">Copy code</button>
               <div id="order-controls" hidden>
                 <span id="order-label" class="menu-label"></span>
@@ -121,16 +131,34 @@
       <div id="run-state"></div>
       <div id="update-state"></div>
       <details id="setup">
-        <summary>Name and sites</summary>
+        <summary>Name, sites and tags</summary>
         <div class="setup-fields">
           <label for="setup-name">Script name</label>
           <input id="setup-name" type="text" placeholder="My script">
           <label for="setup-sites">Sites where the script should run</label>
           <textarea id="setup-sites" rows="3" spellcheck="false" placeholder="https://example.com/*" aria-describedby="setup-help"></textarea>
           <p id="setup-help">One match rule per line. Use <code>/*</code> for every page on a site.</p>
+          <label for="setup-tags">Tags</label>
+          <input id="setup-tags" type="text" placeholder="work, layout" aria-describedby="tags-help">
+          <p id="tags-help">Separate tags with commas or spaces. The first tag is used when grouping by tag.</p>
           <button id="apply-setup" type="button">Apply to source</button>
         </div>
       </details>
+      <div class="editor-toolbar" aria-label="Editor tools" role="group">
+        <button id="editor-find" class="ghost" type="button">Find and replace</button>
+        <button id="editor-jump" class="ghost" type="button">Go to line</button>
+        <details id="editor-edits" class="menu">
+          <summary>Edit code</summary>
+          <div class="menu-items">
+            <button type="button" data-edit="comment">Toggle comment</button>
+            <button type="button" data-edit="indent">Indent</button>
+            <button type="button" data-edit="outdent">Outdent</button>
+          </div>
+        </details>
+        <button id="editor-validate" class="ghost" type="button">Validate script</button>
+        <button id="download-script" class="ghost" type="button">Download .user.js</button>
+        <label class="check-label"><input id="editor-wrap" type="checkbox"> Wrap lines</label>
+      </div>
       <div class="editor" id="editor"></div>
       <div class="status-bar">
         <button id="validation" type="button" aria-live="polite"></button>

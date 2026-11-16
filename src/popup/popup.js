@@ -245,7 +245,7 @@ find.addEventListener("click", async () => {
   window.close();
 });
 check.addEventListener("click", () => openManager({ diagnosticUrl: url.href, showDiagnostics: Date.now() }));
-create.addEventListener("click", () => openManager({ newScriptSite: `${url.origin}/*` }));
+create.addEventListener("click", () => openManager({ newScriptSite: `${url.protocol}//${url.hostname}/*` }));
 $("#manager", HTMLButtonElement).addEventListener("click", () => openManager());
 const footerMenu = $(".footer-menu", HTMLDetailsElement);
 $("#builder", HTMLButtonElement).addEventListener("click", () => {

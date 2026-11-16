@@ -425,3 +425,110 @@ test("a Tampermonkey backup imports with its values and runs once turned on", as
   assert.equal(await page.$eval("#imported", node => node.textContent), "hello from Tampermonkey");
   await page.close();
 });
+
+test("new script from the popup uses a valid match for HTTP sites on custom ports", async () => {
+  const page = await openPage();
+  await page.bringToFront();
+  await manager.evaluate(() => chrome.action.openPopup());
+  const target = await browser.waitForTarget(item => item.url().endsWith("/popup/popup.html"), { timeout: 5000 });
+  const popup = await target.asPage();
+  try {
+    await manager.evaluate(() => {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === "session" && changes.newScriptSite?.newValue) {
+          document.documentElement.dataset.testSitePattern = changes.newScriptSite.newValue;
+        }
+      });
+    });
+    await popup.waitForSelector("#create", { visible: true, timeout: 5000 });
+    await popup.$eval("#create", button => button.click());
+    const pattern = await attribute(manager, "data-test-site-pattern");
+    assert.equal(pattern, "http://localhost/*");
+  } finally {
+    await page.close();
+  }
+});
+
+test("editor toolbar opens navigation and applies undoable editing commands", async () => {
+  const page = await browser.newPage();
+  try {
+    await page.goto(`chrome-extension://${extensionId}/manager/index.html`);
+    await page.waitForSelector(".cm-content");
+    await page.click("#editor-wrap");
+    assert.ok(await page.$(".cm-content.cm-lineWrapping"));
+    await page.click("#editor-jump");
+    await page.waitForSelector(".cm-panel input");
+    await page.keyboard.press("Escape");
+    await page.click("#editor-find");
+    await page.waitForSelector(".cm-search input");
+    await page.keyboard.press("Escape");
+    const text = await page.$eval(".cm-content", node => node.innerText);
+    await page.click("#editor-edits summary");
+    await page.click('[data-edit="indent"]');
+    assert.notEqual(await page.$eval(".cm-content", node => node.innerText), text);
+    const modifier = process.platform === "darwin" ? "Meta" : "Control";
+    await page.keyboard.down(modifier);
+    await page.keyboard.press("z");
+    await page.keyboard.up(modifier);
+    assert.equal(await page.$eval(".cm-content", node => node.innerText), text);
+  } finally {
+    await page.close();
+  }
+});
+
+test("manager adds tags through setup, groups scripts, and validates the draft", async () => {
+  const source = header("Grouped toolbar script", ["match http://localhost/*", "tag work"]) + "void 0;";
+  await send({ type: "save", id: "grouped-toolbar", script: { source, enabled: false }, expected: null });
+  const page = await browser.newPage();
+  try {
+    await page.goto(`chrome-extension://${extensionId}/manager/index.html`);
+    await page.waitForFunction(() => document.querySelector("#scripts").textContent.includes("Grouped toolbar script"));
+    await page.select("#group-scripts", "tag");
+    await page.waitForFunction(() => [...document.querySelectorAll(".script-group-title")].some(heading => heading.firstChild?.textContent === "work"));
+    await page.evaluate(() => {
+      [...document.querySelectorAll("#scripts button")].find(button => button.textContent.includes("Grouped toolbar script")).click();
+    });
+    await page.click("#setup summary");
+    await page.type("#setup-tags", ", layout");
+    await page.click("#apply-setup");
+    await page.waitForFunction(() => document.querySelector(".cm-content").textContent.includes("layout"));
+    await page.click("#editor-validate");
+    await page.waitForFunction(() => document.querySelector("#status").textContent.includes("are valid"));
+    await page.focus(".cm-content");
+    await page.keyboard.down("Control");
+    await page.keyboard.press("End");
+    await page.keyboard.up("Control");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("const =");
+    await page.click("#editor-validate");
+    await page.waitForFunction(() => document.querySelector("#status").textContent.startsWith("JavaScript:"), { timeout: 4000 });
+  } finally {
+    page.on("dialog", dialog => dialog.accept());
+    await page.close();
+  }
+});
+
+test("manager dashboard counts scripts and clears filters", async () => {
+  const source = header("Dashboard example", ["match http://localhost/*", "tag work"]) + "void 0;";
+  await send({ type: "save", id: "dashboard-example", script: { source, enabled: false }, expected: null });
+  const dashboard = await browser.newPage();
+  try {
+    await dashboard.goto(`chrome-extension://${extensionId}/manager/index.html`);
+    await dashboard.waitForFunction(() => document.querySelector("#scripts").textContent.includes("Dashboard example"));
+    for (const width of [360, 1200]) {
+      await dashboard.setViewport({ width, height: 900 });
+      assert.ok(await dashboard.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    }
+    await dashboard.select("#group-scripts", "tag");
+    await dashboard.waitForSelector(".group-count");
+    await dashboard.type("#search", "no dashboard results");
+    await dashboard.waitForFunction(() => document.querySelector("#result-count").textContent.startsWith("0 of"));
+    assert.ok(await dashboard.$eval("#scripts", list => list.hidden));
+    await dashboard.click("#clear-filters");
+    assert.ok(await dashboard.$eval("#search", input => !input.value && document.activeElement === input));
+    assert.ok(await dashboard.$eval("#scripts", list => !list.hidden));
+    assert.equal(await dashboard.$eval("#group-scripts", select => select.value), "tag");
+  } finally {
+    await dashboard.close();
+  }
+});
