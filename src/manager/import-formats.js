@@ -84,6 +84,17 @@ export function applyOverrides(source, overrides, manager, notes) {
   return result.replace(/^(\s*\/\/\s*@(?:noframes|all-frames)) +$/gm, "$1");
 }
 
+// Tampermonkey and Violentmonkey run a script that asks for no APIs inside the page itself, where it can use the
+// site's own code, such as its jQuery. Tailorscript keeps scripts apart from the page unless they say otherwise, so
+// imported scripts like that are marked to run in the page, as they did before.
+export function keepInPage(source, manager, notes) {
+  const grants = headerValues(source, "grant").map(grant => grant.trim()).filter(Boolean);
+  if (grants.some(grant => grant !== "none") || headerValues(source, "inject-into").length || headerValues(source, "sandbox").length) return source;
+  if (!headerBounds(source.split("\n"))) return source;
+  notes.push(`Runs in the page itself, as it did in ${manager}, so it can use the site's own code.`);
+  return addMetadata(source, "inject-into", "page");
+}
+
 const object = value => value && typeof value === "object" && !Array.isArray(value) ? value : undefined;
 
 function parseJson(text, what) {
@@ -132,8 +143,9 @@ function fromTampermonkeyScript(source, options, storage, notes) {
     runAt: opts.run_at, noframes: override.noframes
   }, "Tampermonkey", notes);
   const values = object(storage?.data);
+  const inPage = keepInPage(converted, "Tampermonkey", notes);
   return {
-    source: converted, notes, values, wasEnabled: options ? settings.enabled !== false : undefined,
+    source: inPage, notes, values, wasEnabled: options ? settings.enabled !== false : undefined,
     position: Number(settings.position) || Infinity
   };
 }
@@ -163,7 +175,7 @@ function fromViolentmonkeyZip(files, text) {
     }, "Violentmonkey", notes);
     const stored = object(allValues[violentmonkeyUri(source)]);
     const enabled = info.config?.enabled ?? info.enabled;
-    return entry(converted, {
+    return entry(custom.injectInto ? converted : keepInPage(converted, "Violentmonkey", notes), {
       notes, wasEnabled: enabled === undefined ? undefined : Boolean(enabled),
       values: stored && Object.fromEntries(Object.entries(stored).map(([key, raw]) => [key, violentmonkeyValue(raw)])),
       position: Number(info.position) || Infinity

@@ -1,8 +1,13 @@
+import { createLocator } from "./locator.js";
+
 // What a step can do. `value` describes the extra input a step needs, `kinds` the elements it is the default for.
 export const actions = {
   hide: { label: "Hide", title: "Hide element" },
   click: { label: "Click", title: "Click it automatically", kinds: ["button"] },
   fill: { label: "Fill in", title: "Fill in text", value: { type: "text", placeholder: "Text to enter" }, kinds: ["field"] },
+  check: { label: "Tick", title: "Tick the box or choose the option", roles: ["checkbox", "radio", "switch"] },
+  uncheck: { label: "Untick", title: "Untick the box" },
+  choose: { label: "Choose", title: "Choose an option from the list", value: { type: "text", placeholder: "Option as it appears" }, roles: ["combobox", "listbox"] },
   text: { label: "Replace text", title: "Replace text", value: { type: "text", placeholder: "Replacement text" } },
   color: { label: "Text colour", title: "Change text colour", value: { type: "color", initial: "#0f8f82" } },
   background: { label: "Background", title: "Change background colour", value: { type: "color", initial: "#0f8f82" } },
@@ -13,9 +18,11 @@ export const actions = {
   menu: { label: "Popup button", title: "Click it from the Tailorscript popup", value: { type: "text", placeholder: "Button caption" } }
 };
 
-// The action a new step starts with: clicking for buttons, filling in for fields, hiding for everything else.
-export function defaultAction(kind) {
-  return Object.keys(actions).find(action => actions[action].kinds?.includes(kind)) ?? "hide";
+// The action a new step starts with: ticking checkboxes and radios, choosing from lists, clicking buttons, filling in
+// fields, hiding everything else. role comes from the element's description, when there is one.
+export function defaultAction(kind, role = "") {
+  return Object.keys(actions).find(action => actions[action].roles?.includes(role)) ??
+    Object.keys(actions).find(action => actions[action].kinds?.includes(kind)) ?? "hide";
 }
 
 const styles = {
@@ -30,17 +37,20 @@ const styles = {
 export function stepProblem({ action, value }) {
   if (action === "shortcut" && !String(value ?? "").trim()) return "Type the key to press.";
   if (action === "menu" && !String(value ?? "").trim()) return "Type a caption for the popup button.";
+  if (action === "choose" && !String(value ?? "").trim()) return "Type the option to choose, as it appears in the list.";
   return "";
 }
 
 export function compile(steps) {
-  return steps.map(({ selector, text, action, value, all, expectedCount, tag }) => {
+  return steps.map(({ selector, text, action, value, all, expectedCount, tag, find }) => {
     if (!Object.hasOwn(actions, action) || typeof selector !== "string" || !selector.trim()) {
       throw new Error("Every step needs a selector and a supported action.");
     }
-    const target = { selector, ...(text ? { text } : {}), ...(all ? { all: true } : {}), expectedCount, tag };
+    const target = { selector, ...(text ? { text } : {}), ...(all ? { all: true } : {}), expectedCount, tag, ...(find ? { find } : {}) };
     if (action === "click") return { ...target, click: true };
     if (action === "fill") return { ...target, fill: value ?? "" };
+    if (action === "check" || action === "uncheck") return { ...target, check: action === "check" };
+    if (action === "choose") return { ...target, choose: String(value ?? "").trim() };
     if (action === "shortcut") return { ...target, key: String(value ?? "").trim().slice(0, 20).toLowerCase() };
     if (action === "menu") return { ...target, menu: String(value ?? "").trim().slice(0, 80) };
     if (action === "text" || action === "note") return { ...target, [action]: value ?? "" };
@@ -51,52 +61,104 @@ export function compile(steps) {
   });
 }
 
-// Serialized into generated scripts and the inspected page. Keep it self-contained.
-export function createRunner(steps, preview = false) {
+// Serialized into generated scripts and the inspected page. Keep it self-contained. locator is createLocator().
+export function createRunner(steps, preview = false, locator = null) {
   const applied = steps.map(() => new WeakSet());
   const notes = new WeakSet();
   const undo = [];
   const onDemand = step => "key" in step || "menu" in step;
+  // Form steps set a state rather than doing something once, so they are applied again whenever the page has undone
+  // them, for example when a framework resets a form after it loads. A field you're typing in is left alone.
+  const keepsState = step => "fill" in step || "check" in step || "choose" in step;
 
-  // The elements a step applies to, or a sentence saying why it is skipped.
+  // The elements a step applies to and how they were found, or a sentence saying why it is skipped.
   function targetsOf(step) {
-    let matches;
-    try {
-      matches = [...document.querySelectorAll(step.selector)].filter(element => !notes.has(element) &&
-        (!step.text || (element.textContent ?? "").replace(/\s+/g, " ").trim() === step.text));
-    } catch {
-      return "Skipped · invalid selector";
-    }
-    if (!matches.length) return "Skipped · no matches";
-    if (step.expectedCount != null && matches.length !== step.expectedCount) {
+    const { elements, how, invalid } = locator.locate(step);
+    const matches = elements.filter(element => !notes.has(element));
+    if (!matches.length) return invalid ? "Skipped · invalid selector, and nothing on the page fits the description" : "Skipped · no matches";
+    if (step.expectedCount != null && matches.length !== step.expectedCount && how === "selector") {
       return `Skipped · expected ${step.expectedCount} match(es), found ${matches.length}`;
     }
     const targets = step.all ? matches : matches.slice(0, 1);
-    if (step.tag && targets.some(element => element.localName !== step.tag)) return `Skipped · expected <${step.tag}>`;
-    return { matches, targets };
+    return { matches, targets, how };
   }
 
-  // Sets a field the way typing does, so pages built with frameworks notice the change.
-  function fill(field, value) {
-    const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), "value")?.set;
-    if (setter) setter.call(field, value);
-    else if (field.isContentEditable) field.textContent = value;
-    else field.value = value;
-    field.dispatchEvent(new Event("input", { bubbles: true }));
-    field.dispatchEvent(new Event("change", { bubbles: true }));
+  // The real control behind a web component, such as the <input> inside Ionic's ion-input.
+  function control(element) {
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) return element;
+    return element.shadowRoot?.querySelector("input, textarea, select") ?? element;
   }
+  const events = element => {
+    element.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    element.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+  };
+  // Sets a value the way typing does, so pages built with React, Angular, Vue or Ionic notice the change.
+  function setValue(field, value) {
+    const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), "value")?.set;
+    if (field.isContentEditable && !setter) field.textContent = value;
+    else if (setter) setter.call(field, value);
+    else field.value = value;
+    events(field);
+  }
+  const valueOf = field => field.isContentEditable && !("value" in field) ? field.textContent : field.value;
+  const checkedOf = element => typeof element.checked === "boolean" ? element.checked
+    : element.getAttribute("aria-checked") === "true" || element.getAttribute("aria-pressed") === "true";
+  const busy = element => {
+    const active = document.activeElement;
+    return Boolean(active && (active === element || element.contains(active) || active.shadowRoot?.activeElement === element));
+  };
+
+  // Brings a form control to the state a step asks for. Returns true when something changed.
+  function setState(element, step) {
+    if ("check" in step) {
+      if (checkedOf(element) === step.check) return false;
+      const before = checkedOf(element);
+      element.click();
+      // Some styled controls hide the real input from clicks; set it directly then.
+      if (checkedOf(element) === before && typeof element.checked === "boolean") {
+        element.checked = step.check;
+        events(element);
+      }
+      if (preview) undo.push(() => { if (checkedOf(element) !== before) element.click(); });
+      return true;
+    }
+    const field = control(element);
+    if ("choose" in step) {
+      if (!(field instanceof HTMLSelectElement)) return false;
+      const wanted = step.choose.toLowerCase();
+      const option = [...field.options].find(item => item.text.trim().toLowerCase() === wanted || item.value.toLowerCase() === wanted) ??
+        [...field.options].find(item => item.text.trim().toLowerCase().includes(wanted));
+      if (!option || field.value === option.value) return false;
+      const before = field.value;
+      setValue(field, option.value);
+      if (preview) undo.push(() => setValue(field, before));
+      return true;
+    }
+    if (field instanceof HTMLSelectElement) return setState(element, { choose: step.fill });
+    if (valueOf(field) === step.fill || busy(field)) return false;
+    const before = valueOf(field);
+    setValue(field, step.fill);
+    if (preview) undo.push(() => setValue(field, before));
+    return true;
+  }
+
+  const foundNote = how => how === "description" ? " · found by its label and description, because the selector no longer fits" : "";
 
   function run() {
     return steps.map((step, index) => {
       const found = targetsOf(step);
       if (typeof found === "string") return found;
-      const { matches, targets } = found;
+      const { matches, targets, how } = found;
       if (onDemand(step)) {
-        return "key" in step ? `Ready · clicks when you press ${step.key.toUpperCase()}` : `Ready · adds “${step.menu}” to the popup`;
+        return ("key" in step ? `Ready · clicks when you press ${step.key.toUpperCase()}` : `Ready · adds “${step.menu}” to the popup`) + foundNote(how);
       }
-      if (preview && step.click) return `Would click ${targets.length} element(s) · not clicked in a preview`;
+      if (preview && step.click) return `Would click ${targets.length} element(s) · not clicked in a preview` + foundNote(how);
       let changed = 0;
       for (const element of targets) {
+        if (keepsState(step)) {
+          if (setState(element, step)) changed++;
+          continue;
+        }
         if (applied[index].has(element)) continue;
         if (step.style && element.style) {
           const [property, value] = step.style;
@@ -121,17 +183,14 @@ export function createRunner(steps, preview = false) {
           notes.add(note);
           element.after(note);
           if (preview) undo.push(() => note.remove());
-        } else if ("fill" in step) {
-          const previous = element.isContentEditable ? element.textContent : element.value;
-          fill(element, step.fill);
-          if (preview) undo.push(() => fill(element, previous));
         } else if (step.click) {
           element.click();
         } else continue;
         applied[index].add(element);
         changed++;
       }
-      return `Changed ${changed} of ${matches.length} matching element(s)`;
+      if (keepsState(step) && !changed) return `Already set on ${targets.length} element(s)` + foundNote(how);
+      return `Changed ${changed} of ${matches.length} matching element(s)` + foundNote(how);
     });
   }
 
@@ -164,7 +223,11 @@ export function recipeRevision(marker) {
   return (hash >>> 0).toString(16);
 }
 
-export function generateRecipe(recipe, { reportRuns = true } = {}) {
+// code is the runner and locator source to embed. Saved scripts are checked against the code they already contain,
+// so recipes saved by an earlier builder still open (see readRecipe); null leaves the locator out, as older ones did.
+const currentCode = () => ({ runner: createRunner.toString(), locator: createLocator.toString() });
+
+export function generateRecipe(recipe, { reportRuns = true, code = currentCode() } = {}) {
   const { name, page, scope, watch, steps, namespace, scriptVersion } = recipe;
   if ([namespace, scriptVersion].some(value => /[\r\n\u2028\u2029]/.test(value ?? ""))) {
     throw new Error("Namespace and script version must each fit on one line.");
@@ -178,6 +241,7 @@ export function generateRecipe(recipe, { reportRuns = true } = {}) {
   if (path) guards.push(`location.pathname === ${JSON.stringify(path)}`);
   const usable = steps.filter(step => !stepProblem(step));
   const compiled = compile(usable);
+  const forms = compiled.some(step => "fill" in step || "check" in step || "choose" in step);
   const menus = compiled.flatMap((step, index) => "menu" in step ? [[index, step.menu]] : []);
   const keys = compiled.some(step => "key" in step);
   const canonical = { version: 2, name: title, page: url.origin + url.pathname, scope, watch, steps,
@@ -196,11 +260,13 @@ export function generateRecipe(recipe, { reportRuns = true } = {}) {
 // Made with the Tailorscript visual builder. Open the page's developer tools and choose the Tailorscript tab to
 // change it there. Editing the code below turns it into an ordinary script.
 (() => {
-  // What to change: each step names an element with a CSS selector and says what to do with it.
+  // What to change: each step names an element with a CSS selector, describes it so it can still be found if the
+  // selector stops matching, and says what to do with it.
   const steps = ${data};
-
-  const createRunner = ${createRunner.toString()};
-  const runner = createRunner(steps);
+${code.locator ? `
+  const createLocator = ${code.locator};` : ""}
+  const createRunner = ${code.runner};
+  const runner = createRunner(steps${code.locator ? ", false, createLocator()" : ""});
   const inScope = () => ${guards.join(" && ")};
 ${reportRuns ? `  let previous = [];
   function apply() {
@@ -214,7 +280,9 @@ ${reportRuns ? `  let previous = [];
     if (inScope()) runner.run();
   }`}
 
-  apply();${keys ? `
+  apply();${forms && code.locator ? `
+  // Pages built with frameworks often reset forms just after loading, so form steps are checked again a few times.
+  for (const delay of [500, 1500, 3000, 6000]) setTimeout(apply, delay);` : ""}${keys ? `
   runner.listen();` : ""}${menus.map(([index, caption]) => `
   GM_registerMenuCommand(${JSON.stringify(caption)}, () => {
     if (inScope()) runner.trigger(${index});
@@ -264,8 +332,14 @@ export function readRecipe(source) {
     }
     if (recipe?.version !== 2) return null;
     const { reportRuns, ...data } = recipe;
-    if (generateRecipe(data, { reportRuns: Boolean(reportRuns) }) !== source) return null;
-    return reportRuns ? data : { ...data, upgraded: true };
+    // Regenerate with the runner and locator the script already contains, so any other edit is noticed but a recipe
+    // saved by an earlier version of the builder still opens. Saving it again brings it up to date.
+    const runner = source.match(/\n {2}const createRunner = ([\s\S]*?);\n {2}const runner = createRunner\(steps(?:, false, createLocator\(\))?\);\n/)?.[1];
+    if (!runner) return null;
+    const locator = source.match(/\n {2}const createLocator = ([\s\S]*?);\n {2}const createRunner = /)?.[1] ?? null;
+    if (generateRecipe(data, { reportRuns: Boolean(reportRuns), code: { runner, locator } }) !== source) return null;
+    const current = currentCode();
+    return reportRuns && runner === current.runner && locator === current.locator ? data : { ...data, upgraded: true };
   } catch {
     return null;
   }
@@ -285,6 +359,9 @@ export function describeStep(step) {
     hide: `Hide ${target}`,
     click: `Click ${target} when it appears`,
     fill: `Type ${text} into ${target}`,
+    check: `Tick ${target}`,
+    uncheck: `Untick ${target}`,
+    choose: `Choose ${text} in ${target}`,
     text: `Change the text of ${target} to ${text}`,
     color: `Colour the text of ${target}`,
     background: `Colour the background of ${target}`,

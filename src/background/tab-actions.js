@@ -8,8 +8,15 @@ export async function runNow({ id, tabId }) {
   if (!script) throw new Error("This script no longer exists.");
   const execute = chrome.userScripts?.execute;
   if (!execute) throw new Error("Turn on Allow User Scripts in Tailorscript’s extension details, then try again.");
-  const { metadata, js, world, worldId } = await injectionFor(script);
+  const { metadata, js, world, worldId, bridge } = await injectionFor(script);
   if (worldId) await enableMessaging(worldId);
+  // A page-world script's bridge goes in first, in the script's isolated world, so its GM calls have somewhere to go.
+  if (bridge) {
+    await enableMessaging(bridge.worldId);
+    await chrome.userScripts.execute({
+      target: { tabId, allFrames: metadata.allFrames }, js: bridge.js, world: "USER_SCRIPT", worldId: bridge.worldId, injectImmediately: true
+    });
+  }
   const results = await chrome.userScripts.execute({
     target: { tabId, allFrames: metadata.allFrames }, js, world, ...(worldId ? { worldId } : {}), injectImmediately: true
   });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { applyOverrides, decodeImportFile, headerValues } from "../src/manager/import-formats.js";
+import { applyOverrides, decodeImportFile, headerValues, keepInPage } from "../src/manager/import-formats.js";
 import { readZip } from "../src/shared/zip.js";
 import { zip } from "./helpers/zip.mjs";
 
@@ -37,7 +37,10 @@ test("Tampermonkey backups keep state, values, site rules and order", async () =
   assert.deepEqual(headerValues(first.source, "exclude"), ["https://a.com/admin*"]);
   assert.deepEqual(headerValues(first.source, "run-at"), ["document-start"]);
   assert.equal(headerValues(first.source, "noframes").length, 1);
-  assert.equal(first.notes.length, 3);
+  assert.equal(first.notes.length, 4);
+  // It asks for no APIs, so it runs in the page as it did in Tampermonkey.
+  assert.deepEqual(headerValues(first.source, "inject-into"), ["page"]);
+  assert.match(first.notes.at(-1), /Runs in the page itself/);
 });
 
 test("macOS archive copies are ignored", async () => {
@@ -97,6 +100,17 @@ test("any zip of .user.js files, Tampermonkey text exports, backups and single s
   assert.equal(cleaned.entries.length, 1);
   assert.equal(cleaned.skipped, 2);
   await assert.rejects(decodeImportFile("x.json", new TextEncoder().encode('{"hello":1}')), /isn’t a backup/);
+});
+
+test("only imported scripts that ask for no APIs are moved into the page", () => {
+  const notes = [];
+  assert.match(keepInPage(script("Plain"), "Tampermonkey", notes), /@inject-into page/);
+  assert.match(keepInPage(script("None", "// @grant none\n"), "Tampermonkey", notes), /@inject-into page/);
+  const withApi = script("Api", "// @grant GM_setValue\n");
+  assert.equal(keepInPage(withApi, "Tampermonkey", notes), withApi);
+  const chosen = script("Chosen", "// @inject-into content\n");
+  assert.equal(keepInPage(chosen, "Tampermonkey", notes), chosen);
+  assert.equal(notes.length, 2);
 });
 
 test("applyOverrides leaves scripts without a header and unchanged settings alone", () => {

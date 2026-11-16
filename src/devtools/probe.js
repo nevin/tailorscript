@@ -5,7 +5,11 @@
 //   count (selector)     how many elements a selector matches, or -1 when it isn't valid CSS
 //   highlight (selector) outlines the matches on the page; null clears the outline
 //   pick-start, pick-poll, pick-stop   let the user click an element on the page
-export function probe(command, argument) {
+// Elements inside web components (open shadow roots, as Ionic and other component libraries use) are reached with
+// " >>> " between selectors: each part is matched inside the shadow roots of the previous part's matches.
+// makeLocator is createLocator from locator.js, passed in so the page and generated scripts find elements the same way.
+export function probe(command, argument, makeLocator) {
+  const locator = makeLocator();
   const key = Symbol.for("tailorscript.probe");
   const state = window[key] ?? (window[key] = { boxes: [], picked: null, stopPick: null });
   const limits = { overlay: 20, button: 80, field: 60, link: 80, heading: 40, media: 40, section: 40 };
@@ -45,41 +49,52 @@ export function probe(command, argument) {
       (element.labels?.[0] && squeeze(element.labels[0].innerText)) || squeeze(element.getAttribute("placeholder")) ||
       (/^(button|submit|reset)$/.test(element.type) && squeeze(element.value)) || squeeze(element.innerText?.slice(0, 200)) ||
       squeeze(element.getAttribute("title")) || squeeze(element.getAttribute("name")) || element.id;
+    // A control inside a web component often has no name of its own; the component around it carries the label.
+    const root = element.getRootNode();
+    if (!text && root instanceof ShadowRoot) return label(root.host, kind);
     return (text || element.tagName.toLowerCase()).slice(0, 70);
   };
 
   // Names that frameworks generate change between visits or builds, so selectors avoid them.
-  const stable = name => Boolean(name) && name.length < 50 &&
-    !/\d{3,}|^(css|sc|jss|jsx|svelte|ember|react|radix|headlessui|mui)[-_:]|^[a-zA-Z]{1,3}-?[a-zA-Z0-9]*\d[a-zA-Z0-9]*$|^[_:]|[A-Za-z]\d[A-Za-z]\d/.test(name);
+  // That includes numbered ids such as ion-input-0 or mat-input-3, and the state classes Angular, Ionic and others add
+  // and remove as a form is used (ng-pristine, ion-touched, has-focus), which would stop a selector matching later.
+  const stateClass = /^(ng-|ion-(touched|untouched|valid|invalid|pristine|dirty|focused|activated|selected|color)|has-|item-has-|is-|sc-ion-|hydrated$|md$|ios$|in-item$|in-toolbar$|interactive$|(focused|focus|activated|active|selected|disabled|checked|open|show|hidden|hover)$)/;
+  const stable = name => Boolean(name) && name.length < 50 && !stateClass.test(name) &&
+    !/\d{3,}|[-_]\d+$|^(css|sc|jss|jsx|svelte|ember|react|radix|headlessui|mui|cdk)[-_:]|^[a-zA-Z]{1,3}-?[a-zA-Z0-9]*\d[a-zA-Z0-9]*$|^[_:]|[A-Za-z]\d[A-Za-z]\d/.test(name);
   const referencedLabel = element => (element.getAttribute("aria-labelledby") ?? "").split(/\s+/)
-    .filter(Boolean).map(id => document.getElementById(id)?.textContent ?? "").join(" ");
+    .filter(Boolean).map(id => (element.getRootNode().getElementById?.(id) ?? document.getElementById(id))?.textContent ?? "").join(" ");
+  const deep = " >>> ";
+  const { queryDeep } = locator;
   const matches = selector => {
     try {
-      return document.querySelectorAll(selector).length;
+      return queryDeep(selector).length;
     } catch {
       return -1;
     }
   };
   const quote = value => `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 
-  const selectors = new Map();
-  function resolve(selector) {
-    if (!selectors.has(selector)) {
+  // The one element a selector finds within a document or shadow root, or null.
+  const selectors = new WeakMap();
+  function resolve(selector, root = document) {
+    if (!selectors.has(root)) selectors.set(root, new Map());
+    const cache = selectors.get(root);
+    if (!cache.has(selector)) {
       try {
-        const results = document.querySelectorAll(selector);
-        selectors.set(selector, results.length === 1 ? results[0] : null);
+        const results = root.querySelectorAll(selector);
+        cache.set(selector, results.length === 1 ? results[0] : null);
       } catch {
-        selectors.set(selector, null);
+        cache.set(selector, null);
       }
     }
-    return selectors.get(selector);
+    return cache.get(selector);
   }
 
   function candidates(element) {
     const tag = CSS.escape(element.localName);
     const options = [];
     if (stable(element.id)) options.push([`#${CSS.escape(element.id)}`, "ID"]);
-    for (const attr of ["data-testid", "data-test", "data-qa", "data-cy", "name", "aria-label", "aria-labelledby", "placeholder", "autocomplete", "type"]) {
+    for (const attr of ["data-testid", "data-test", "data-qa", "data-cy", "formcontrolname", "name", "aria-label", "label", "aria-labelledby", "placeholder", "autocomplete", "type"]) {
       const value = element.getAttribute(attr);
       if (!value || value.length > 80 || [...value].some(char => char.charCodeAt(0) < 32)) continue;
       options.push([`${tag}[${attr}=${quote(value)}]`, attr.startsWith("data-") ? "Test attribute" : "Named attribute"]);
@@ -102,6 +117,16 @@ export function probe(command, argument) {
   // A selector for every element like this one, such as each card's button: its own class, or its tag inside the
   // nearest classed or landmark parent. Null when nothing else on the page is like it.
   function groupFor(element) {
+    const root = element.getRootNode();
+    if (root instanceof ShadowRoot) {
+      // Inside a web component: the same control in every component like this one.
+      const hostGroup = groupFor(root.host);
+      const inner = localSelector(element, root).selector;
+      if (!hostGroup || !inner) return null;
+      const selector = hostGroup.selector + deep + inner;
+      const count = matches(selector);
+      return count > 1 && count <= 200 ? { selector, count } : null;
+    }
     const tag = CSS.escape(element.localName);
     const options = [...element.classList].filter(stable).slice(0, 4).map(name => `${tag}.${CSS.escape(name)}`);
     for (let parent = element.parentElement, depth = 0; parent && depth < 4; parent = parent.parentElement, depth++) {
@@ -118,9 +143,9 @@ export function probe(command, argument) {
   // Text as the runner compares it: all of it, with runs of space collapsed.
   const textOf = element => (element.textContent ?? "").replace(/\s+/g, " ").trim();
   // Elements matching a selector, narrowed to those with exactly this text when one is given.
-  const find = (selector, text) => {
+  const find = (selector, text, root = document) => {
     try {
-      const found = [...document.querySelectorAll(selector)];
+      const found = queryDeep(selector, root);
       return text ? found.filter(element => textOf(element) === text) : found;
     } catch {
       return null;
@@ -129,38 +154,51 @@ export function probe(command, argument) {
 
   // Short, readable text such as "Accept all" can tell apart elements that have no name of their own, and keeps
   // working when the layout changes. Used before falling back to position.
-  function textTarget(element) {
+  function textTarget(element, root = document) {
     const text = textOf(element);
     if (!text || text.length > 60) return null;
     const tag = CSS.escape(element.localName);
     // The nearest named parent first, so the text only has to be unique within it; the whole page last.
     const scopes = [];
     for (let parent = element.parentElement, depth = 0; parent && depth < 5; parent = parent.parentElement, depth++) {
-      const anchor = candidates(parent).find(([selector, basis]) => (basis !== "Tag" || landmarks.includes(parent.localName)) && resolve(selector) === parent);
+      const anchor = candidates(parent).find(([selector, basis]) => (basis !== "Tag" || landmarks.includes(parent.localName)) && resolve(selector, root) === parent);
       if (anchor) scopes.push(`${anchor[0]} `);
     }
     scopes.push("");
     for (const scope of scopes) {
-      const found = find(scope + tag, text);
+      const found = find(scope + tag, text, root);
       if (found?.length === 1 && found[0] === element) return { selector: scope + tag, text, basis: "Text" };
     }
     return null;
   }
 
+  // A selector for an element, through the web components it sits in.
   function selectorFor(element) {
+    const root = element.getRootNode();
+    if (!(root instanceof ShadowRoot)) return localSelector(element, document);
+    const host = selectorFor(root.host);
+    const inner = localSelector(element, root);
+    if (!host.selector || !inner.selector) return { selector: "", basis: "Unavailable" };
+    // A text match only applies to the last part, so the host's own text can't be kept.
+    if (host.text) return { selector: "", basis: "Unavailable" };
+    return { ...inner, selector: host.selector + deep + inner.selector };
+  }
+
+  // A selector that finds only this element within its own document or shadow root.
+  function localSelector(element, root) {
     const options = candidates(element);
     for (const [selector, basis] of options) {
-      if (resolve(selector) === element) return { selector, basis };
+      if (resolve(selector, root) === element) return { selector, basis };
     }
     for (let parent = element.parentElement, depth = 0; parent && depth < 5; parent = parent.parentElement, depth++) {
-      const anchor = candidates(parent).find(([selector, basis]) => basis !== "Tag" && resolve(selector) === parent);
+      const anchor = candidates(parent).find(([selector, basis]) => basis !== "Tag" && resolve(selector, root) === parent);
       if (!anchor) continue;
       for (const [target] of options) {
         const selector = `${anchor[0]} ${target}`;
-        if (resolve(selector) === element) return { selector, basis: "Scoped to parent" };
+        if (resolve(selector, root) === element) return { selector, basis: "Scoped to parent" };
       }
     }
-    const byText = textTarget(element);
+    const byText = textTarget(element, root);
     if (byText) return byText;
     // Last resort: the element's position among its siblings, starting from the nearest parent that can be named.
     // A path always includes at least one parent, so it can't match some unrelated element on another page.
@@ -168,10 +206,10 @@ export function probe(command, argument) {
     let unanchored = "";
     for (let node = element, depth = 0; node && node !== document.documentElement; node = node.parentElement, depth++) {
       if (node !== element) {
-        const anchor = candidates(node).find(([selector, basis]) => (basis !== "Tag" || landmarks.includes(node.localName)) && resolve(selector) === node);
+        const anchor = candidates(node).find(([selector, basis]) => (basis !== "Tag" || landmarks.includes(node.localName)) && resolve(selector, root) === node);
         if (anchor) {
           const selector = `${anchor[0]} > ${parts.join(" > ")}`;
-          if (resolve(selector) === element) return { selector, basis: "Position-based" };
+          if (resolve(selector, root) === element) return { selector, basis: "Position-based" };
         }
       }
       let index = 1;
@@ -181,7 +219,7 @@ export function probe(command, argument) {
       }
       for (const sibling of node.parentElement?.children ?? []) if (sibling !== node && sibling.localName === node.localName) alone = false;
       parts.unshift(CSS.escape(node.localName) + (alone ? "" : `:nth-of-type(${index})`));
-      if (!unanchored && parts.length > 1 && resolve(parts.join(" > ")) === element) unanchored = parts.join(" > ");
+      if (!unanchored && (parts.length > 1 || root !== document) && resolve(parts.join(" > "), root) === element) unanchored = parts.join(" > ");
       if (unanchored && depth >= 6) break;
     }
     if (unanchored) return { selector: unanchored, basis: "Position-based" };
@@ -203,7 +241,8 @@ export function probe(command, argument) {
   const own = element => element.closest?.("[data-tailorscript-probe]");
   const describe = (element, kind = kindOf(element)) => {
     const { selector, basis, text } = selectorFor(element);
-    return { kind, label: label(element, kind), tag: element.localName, selector, text, basis, matches: selector ? 1 : 0, group: groupFor(element) };
+    return { kind, label: label(element, kind), tag: element.localName, selector, text, basis, matches: selector ? 1 : 0, group: groupFor(element),
+      find: locator.describe(element) };
 
   };
 
@@ -256,14 +295,25 @@ export function probe(command, argument) {
       candidates.push({ node, kind, inView, isField });
     }
 
-    // Discover controls throughout the document even when a large section uses the generic scan budget.
+    // Discover controls throughout the document, and inside web components, within a budget of elements and time.
     const fields = document.querySelectorAll(formFields);
     for (let index = 0; index < Math.min(fields.length, 2000); index++) consider(fields[index], true);
-    const walker = document.createTreeWalker(document.body ?? document.documentElement, NodeFilter.SHOW_ELEMENT);
+    const roots = /** @type {Node[]} */ ([document.body ?? document.documentElement]);
+    const deadline = performance.now() + 1500;
     let checked = 0;
     let node;
-    while ((node = walker.nextNode()) && checked++ < 6000) {
-      if (node instanceof Element) consider(node);
+    let limited = fields.length > 2000;
+    while (roots.length && !limited) {
+      const walker = document.createTreeWalker(roots.shift(), NodeFilter.SHOW_ELEMENT);
+      while ((node = walker.nextNode())) {
+        if (++checked > 20000 || performance.now() > deadline) {
+          limited = true;
+          break;
+        }
+        if (!(node instanceof Element)) continue;
+        if (node.shadowRoot) roots.push(node.shadowRoot);
+        consider(node, node.getRootNode() !== document && node.matches(formFields));
+      }
     }
     candidates.sort((a, b) => Number(b.inView) - Number(a.inView) || Number(b.isField) - Number(a.isField));
     const counts = {};
@@ -288,7 +338,7 @@ export function probe(command, argument) {
     for (const group of sameLabel.values()) {
       if (group.length < 2) continue;
       const contexts = group.map(({ node, label: own }) => {
-        for (let parent = node.parentElement, depth = 0; parent && parent !== document.body && depth < 4; parent = parent.parentElement, depth++) {
+        for (let parent = node.parentElement ?? node.getRootNode().host, depth = 0; parent && parent !== document.body && depth < 4; parent = parent.parentElement ?? parent.getRootNode().host, depth++) {
           const heading = squeeze(parent.querySelector("h1, h2, h3, h4, h5, h6, [role=heading]")?.innerText).slice(0, 40);
           if (heading && heading !== own) return heading;
         }
@@ -301,31 +351,31 @@ export function probe(command, argument) {
       });
     }
     for (const item of items) delete item.node;
-    return { url: location.href, title: document.title, items, limited: Boolean(node) || fields.length > 2000 || omitted > 0 };
+    return { url: location.href, title: document.title, items, limited: limited || omitted > 0 };
   }
 
-  if (command === "describe") return argument instanceof Element && argument.getRootNode() === document ? describe(fieldTarget(argument)) : null;
+  if (command === "describe") return argument instanceof Element && argument.isConnected ? describe(fieldTarget(argument)) : null;
   if (command === "count") return matches(argument);
   if (command === "diagnose" || command === "check-recipe") {
-    const results = argument.map(({ selector, text, expectedCount, tag, all }) => {
-      const elements = find(selector, text);
-      if (!elements) return { count: null, message: "Invalid selector" };
+    // Each step is found the way its script will find it: selector first, then its description.
+    const results = argument.map(step => {
+      const { elements, how, invalid } = locator.locate(step);
       const count = elements.length;
-      if (!count) return { count, message: "No match" };
-      if (expectedCount != null && count !== expectedCount) {
-        return { count, message: `Expected ${expectedCount}, found ${count}` };
+      if (!count) return { count, message: invalid ? "Invalid selector, and nothing fits the description" : "No match" };
+      if (step.expectedCount != null && count !== step.expectedCount && how === "selector") {
+        return { count, message: `Expected ${step.expectedCount}, found ${count}` };
       }
-      const targets = all ? elements : [elements[0]];
-      if (tag && targets.some(element => element.localName !== tag)) return { count, message: `Expected <${tag}>` };
-      return { count, applied: targets.length, message: `Ready · ${count} match(es)` };
+      const applied = step.all ? count : 1;
+      const via = how === "description" ? " · found by its label and description; the selector no longer fits" : "";
+      return { count, applied, how, message: `Ready · ${count} match(es)${via}` };
     });
     return command === "diagnose" ? results.map(result => result.message) : { url: location.href, results };
   }
 
-  // The argument is a selector, or { selector, text } for an element found by its text.
+  // The argument is a selector, or a step-like { selector, text, find, all } located as the script would.
   if (command === "highlight") {
     const target = typeof argument === "string" ? { selector: argument } : argument;
-    const elements = target?.selector ? find(target.selector, target.text) ?? [] : [];
+    const elements = target?.selector ? locator.locate(target).elements : [];
     if (!elements.length) {
       clearBoxes();
       return 0;
@@ -344,12 +394,19 @@ export function probe(command, argument) {
       event.preventDefault();
       event.stopImmediatePropagation();
     };
+    // The first entry of composedPath is the element itself, even inside a web component's shadow root.
+    const pointed = event => {
+      const target = event.composedPath()[0];
+      return target instanceof Element ? target : null;
+    };
     const move = event => {
-      if (event.target instanceof Element && !own(event.target)) outline([event.target]);
+      const target = pointed(event);
+      if (target && !own(target)) outline([target]);
     };
     const choose = event => {
       swallow(event);
-      if (event.target instanceof Element && event.target.getRootNode() === document) state.picked = describe(fieldTarget(event.target));
+      const target = pointed(event);
+      if (target?.isConnected) state.picked = describe(fieldTarget(target));
       state.stopPick();
     };
     const cancel = event => {

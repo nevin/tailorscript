@@ -101,6 +101,7 @@ main > section { min-width: 0; min-height: 0; overflow: auto; padding: var(--spa
 .step-action input[type="number"] { flex: 0 0 5rem; }
 .step-target { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .75rem; }
 .target-status:empty, .test-result:empty, .step-problem:empty { display: none; }
+.step-finds { color: var(--muted); }
 .target-status[data-state="ready"] { color: var(--accent); }
 .target-status[data-state="warning"], .step-problem { color: var(--warning); }
 .test-result { color: inherit; padding: .25rem .45rem; border-radius: .3rem; background: var(--accent-soft); }

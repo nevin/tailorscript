@@ -6,6 +6,7 @@ import { readScripts } from "../shared/storage.js";
 import { allows, parseSource, runsOn, updateScriptIdentity } from "../shared/userscript.js";
 import { actions, appendVisualSteps, compile, createRunner, defaultAction, describeStep, generateRecipe, recipeRevision, readRecipe, separateVisualSteps, stepLabel, stepProblem } from "./generator.js";
 import { parseRecipeBackup, recipeBackup } from "./recipe-file.js";
+import { createLocator } from "./locator.js";
 import { previewPage } from "./preview.js";
 import { probe } from "./probe.js";
 
@@ -120,7 +121,7 @@ function button(label, click, className) {
 }
 
 function inspect(command, argument = "null") {
-  return evaluate(`(${probe.toString()})(${JSON.stringify(command)}, ${argument})`);
+  return evaluate(`(${probe.toString()})(${JSON.stringify(command)}, ${argument}, ${createLocator.toString()})`);
 }
 
 function evaluate(expression) {
@@ -136,7 +137,7 @@ function evaluate(expression) {
 let highlightTimer;
 function highlightSoon(target) {
   clearTimeout(highlightTimer);
-  const argument = target ? { selector: target.selector, text: target.text } : null;
+  const argument = target ? { selector: target.selector, text: target.text, find: target.find, all: target.all } : null;
   highlightTimer = setTimeout(() => {
     if (!activePick) inspect("highlight", JSON.stringify(argument)).catch(() => {});
   }, target ? 80 : 150);
@@ -233,7 +234,7 @@ function add(item, { action, index = steps.length, group = false } = {}) {
   const everyone = group && item.group;
   const step = {
     selector: everyone ? item.group.selector : item.selector, text: everyone ? undefined : item.text,
-    label: item.label, action: action ?? defaultAction(item.kind),
+    label: item.label, action: action ?? defaultAction(item.kind, item.find?.role), find: item.find,
     values: {}, all: Boolean(everyone), valid: true, expectedCount: everyone ? undefined : 1, tag: item.tag,
     one: item.selector, oneText: item.text, group: item.group ?? undefined, plain: item.plain
   };
@@ -304,8 +305,8 @@ function recipe() {
     version: blankRecipe.version, name: name.value, page: draftPage, scope: scope.value, watch: watch.checked,
     ...(namespace.value.trim() ? { namespace: namespace.value.trim() } : {}),
     ...(scriptVersion.value.trim() ? { scriptVersion: scriptVersion.value.trim() } : {}),
-    steps: steps.map(({ selector, text, label, action, values, all, expectedCount, tag, one, oneText, group, plain }) => ({
-      selector, text, label, action, value: values[action], all, expectedCount, tag, one, oneText, group, plain
+    steps: steps.map(({ selector, text, label, action, values, all, expectedCount, tag, one, oneText, group, plain, find }) => ({
+      selector, text, label, action, value: values[action], all, expectedCount, tag, one, oneText, group, plain, ...(find ? { find } : {})
     }))
   };
 }
@@ -351,7 +352,7 @@ dryRun.addEventListener("click", async () => {
   const snapshot = JSON.stringify(draft);
   const usable = draft.steps.filter(step => !stepProblem(step));
   try {
-    const payload = usable.map(({ selector, text, expectedCount, tag, all }) => ({ selector, text, expectedCount, tag, all }));
+    const payload = usable.map(({ selector, text, expectedCount, tag, all, find }) => ({ selector, text, expectedCount, tag, all, find }));
     const { url, results } = await inspect("check-recipe", JSON.stringify(payload));
     if (snapshot !== JSON.stringify(recipe())) return;
     const address = new URL(url);
@@ -509,7 +510,7 @@ function diagnoseSteps() {
   }
   diagnosticTimer = setTimeout(async () => {
     try {
-      const targets = steps.map(({ selector, text, expectedCount, tag, all }) => ({ selector, text, expectedCount, tag, all }));
+      const targets = steps.map(({ selector, text, expectedCount, tag, all, find }) => ({ selector, text, expectedCount, tag, all, find }));
       const messages = await inspect("diagnose", JSON.stringify(targets));
       if (version !== diagnosticVersion) return;
       messages.forEach((message, index) => {
@@ -585,7 +586,7 @@ function pickReplacement(step) {
   return pickElement("Click the new element on the page.", result => {
     if (!steps.includes(step)) return;
     Object.assign(step, {
-      selector: result.selector, text: result.text, one: result.selector, oneText: result.text, group: result.group ?? undefined, plain: undefined, tag: result.tag, label: result.label,
+      selector: result.selector, text: result.text, one: result.selector, oneText: result.text, group: result.group ?? undefined, plain: undefined, tag: result.tag, label: result.label, find: result.find,
       valid: true, all: false, expectedCount: 1
     });
     renderSteps();
@@ -597,9 +598,10 @@ pick.addEventListener("click", () => pickElement("Click an element on the page t
 
 /* Step cards. */
 
+// A selector is valid when each part between " >>> " (which steps into a web component) is valid CSS.
 function validSelector(selector) {
   try {
-    document.querySelector(selector);
+    for (const part of selector.split(" >>> ")) document.querySelector(part);
     return true;
   } catch {
     return false;
@@ -612,6 +614,18 @@ function moveStep(step, to) {
   steps.splice(from, 1);
   steps.splice(to > from ? to - 1 : to, 0, step);
   renderSteps();
+}
+
+const roleNames = { textbox: "text box", searchbox: "search box", combobox: "list", checkbox: "checkbox", radio: "option",
+  switch: "switch", button: "button", link: "link", heading: "heading", slider: "slider", listbox: "list", tab: "tab", menuitem: "menu item", img: "image" };
+// The step's element in words, such as Finds the text box “Email”, which is how the script looks for it if the
+// selector stops matching.
+function describeTarget(find) {
+  if (!find) return "";
+  const kind = roleNames[find.role] ?? find.tag ?? "element";
+  const name = find.name || find.text;
+  const attribute = find.attributes?.formcontrolname ?? find.attributes?.["data-testid"] ?? find.attributes?.name;
+  return `Finds the ${kind}${name ? ` “${name}”` : attribute ? ` named ${attribute}` : ""}`;
 }
 
 function renderStep(step, index) {
@@ -699,6 +713,8 @@ function renderStep(step, index) {
   const action = make("div", "step-action", choice, input, unit);
 
   const target = make("div", "step-target", diagnostic);
+  const finds = describeTarget(step.find);
+  if (finds) target.prepend(make("span", "step-finds", finds));
   if (step.group && step.one) {
     // Repeated elements, such as each product's button, can be changed one at a time or all together.
     const which = document.createElement("select");
@@ -1050,7 +1066,7 @@ test.addEventListener("click", async () => {
   const path = draft.scope === "path" ? url.pathname : null;
   try {
     const args = [compile(usable.map(({ step }) => step)), url.origin, path].map(value => JSON.stringify(value)).join(", ");
-    const messages = await evaluate(`(${previewPage.toString()})(${createRunner.toString()}, ${args})`);
+    const messages = await evaluate(`(${previewPage.toString()})(${createRunner.toString()}, ${args}, ${createLocator.toString()})`);
     if (messages.length !== usable.length) {
       say(messages[0] ?? "Nothing was tested.", "error");
       return;

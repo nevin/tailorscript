@@ -1,5 +1,6 @@
 import { allows, grantFamilies, originsFor, parseSource, syncValueGrants } from "../shared/userscript.js";
-import { tokenFor } from "./bridge-token.js";
+import { channelFor, tokenFor } from "./bridge-token.js";
+import { installBridge } from "./bridge.js";
 import { installRuntime } from "./userscript-runtime.js";
 import { getLocal } from "../shared/storage.js";
 
@@ -17,15 +18,26 @@ function guarded(source, guard) {
   return `(function () {${strict ? ' "use strict";' : ""} if (!${check}) return; ${source}\n}).call(this);`;
 }
 
+// Page-world scripts get their APIs as local names from a wrapper rather than as page globals. The wrapper takes them
+// from where the runtime left them, removes them from the page, and reports errors the script throws. It shares the
+// script's first and last lines, so reported line numbers don't move.
+function inPage(source, names, handoff) {
+  const strict = /^(?:\s|\/\/[^\n]*|\/\*[\s\S]*?\*\/)*(["'])use strict\1/.test(source);
+  return `(function (__tailorscript) {${strict ? ' "use strict";' : ""} const { ${names.join(", ")} } = __tailorscript.api; try { ${source}\n} catch (error) { __tailorscript.failed(error); throw error; } })` +
+    `.call(window, (bag => (delete window[${JSON.stringify(handoff)}], bag ?? { api: {}, failed() {} }))(window[${JSON.stringify(handoff)}]));`;
+}
+
 /**
  * @param {import("../shared/types.js").Script} script
  * @param {import("../shared/types.js").Metadata} metadata
- * @param {{ deps?: import("../shared/types.js").Deps, values?: Record<string, unknown>, token?: string }} [stored]
- *   token proves the script's identity to the service worker; page-world scripts never get one.
+ * @param {{ deps?: import("../shared/types.js").Deps, values?: Record<string, unknown>, token?: string, channel?: string }} [stored]
+ *   token proves the script's identity to the service worker. Page-world scripts never get it: their bridge, which
+ *   runs in the script's isolated world and shares channel with it, holds it instead.
  * @returns {{ world: "MAIN" | "USER_SCRIPT", worldId?: string,
- *   js: [chrome.userScripts.ScriptSource, ...chrome.userScripts.ScriptSource[]] }}
+ *   js: [chrome.userScripts.ScriptSource, ...chrome.userScripts.ScriptSource[]],
+ *   bridge?: { worldId: string, js: [chrome.userScripts.ScriptSource] } }}
  */
-export function buildInjection(script, metadata, { deps = {}, values, token } = {}) {
+export function buildInjection(script, metadata, { deps = {}, values, token, channel } = {}) {
   if (deps.error) throw new Error(deps.error);
   const requires = metadata.requires.map(url => {
     const entry = deps.requires?.find(item => item.url === url);
@@ -38,10 +50,13 @@ export function buildInjection(script, metadata, { deps = {}, values, token } = 
     return [name, entry.dataUrl];
   }));
   const page = metadata.injectInto === "page";
+  const bridged = page && Boolean(channel && token);
+  const handoff = `__tailorscript_${(channel ?? script.id).replace(/\W/g, "_")}`;
   const config = {
     id: script.id,
     page,
     token: page ? undefined : token,
+    ...(page ? { handoff, ...(bridged ? { channel } : {}) } : {}),
     allowed: Object.keys(grantFamilies).filter(family => allows(metadata.grants, family)),
     values: metadata.grants.some(grant => syncValueGrants.includes(grant)) ? values ?? {} : null,
     resources,
@@ -59,10 +74,15 @@ export function buildInjection(script, metadata, { deps = {}, values, token } = 
       }
     }
   };
+  const body = guarded(script.source, metadata.targets.guard);
+  // The names the wrapper gives a page-world script: GM, GM_info and the granted APIs that are plain identifiers.
+  const names = ["GM", "GM_info", ...new Set(config.allowed.flatMap(family => grantFamilies[family])
+    .filter(name => /^[A-Za-z_$][\w$]*$/.test(name) && name !== "GM_info"))];
   return {
     world: page ? "MAIN" : "USER_SCRIPT",
     ...(page ? {} : { worldId: script.id }),
-    js: [{ code: `(${installRuntime})(${JSON.stringify(config)});` }, ...requires, { code: guarded(script.source, metadata.targets.guard) }]
+    js: [{ code: `(${installRuntime})(${JSON.stringify(config)});` }, ...requires, { code: page ? inPage(body, names, handoff) : body }],
+    ...(bridged ? { bridge: { worldId: script.id, js: [{ code: `(${installBridge})(${JSON.stringify({ id: script.id, token, channel })});` }] } } : {})
   };
 }
 
@@ -77,8 +97,8 @@ export async function injectionFor(script) {
   const stored = await storedExtras([script]);
   return {
     metadata,
-    ...buildInjection(script, metadata,
-      { deps: stored[`deps:${script.id}`], values: stored[`values:${script.id}`], token: await tokenFor(script.id) })
+    ...buildInjection(script, metadata, { deps: stored[`deps:${script.id}`], values: stored[`values:${script.id}`],
+      token: await tokenFor(script.id), channel: await channelFor(script.id) })
   };
 }
 
@@ -118,6 +138,9 @@ function sameRegistration(before, after) {
     before.js.every((part, index) => part.code === after.js[index].code && part.file === after.js[index].file);
 }
 
+const bridgeSuffix = "::bridge";
+const scriptIdOf = registrationId => registrationId.endsWith(bridgeSuffix) ? registrationId.slice(0, -bridgeSuffix.length) : registrationId;
+
 export async function syncScripts(scripts, settings = {}) {
   const issues = Object.create(null);
   const manual = [];
@@ -153,17 +176,19 @@ export async function syncScripts(scripts, settings = {}) {
         issues[script.id] = "Site access is missing. Save the enabled script to request access again.";
         continue;
       }
-      registrations.push({
-        id: script.id,
+      const where = {
         matches: targets.matches,
         excludeMatches: targets.excludeMatches,
         ...(targets.includeGlobs.length ? { includeGlobs: targets.includeGlobs } : {}),
         ...(targets.excludeGlobs.length ? { excludeGlobs: targets.excludeGlobs } : {}),
         runAt: metadata.runAt,
-        allFrames: metadata.allFrames,
-        ...buildInjection(script, metadata,
-          { deps: stored[`deps:${script.id}`], values: stored[`values:${script.id}`], token: await tokenFor(script.id) })
-      });
+        allFrames: metadata.allFrames
+      };
+      const { bridge, ...injection } = buildInjection(script, metadata, { deps: stored[`deps:${script.id}`],
+        values: stored[`values:${script.id}`], token: await tokenFor(script.id), channel: await channelFor(script.id) });
+      // A page-world script's bridge is registered just before it, with the same sites and timing.
+      if (bridge) registrations.push({ id: `${script.id}${bridgeSuffix}`, ...where, world: /** @type {const} */ ("USER_SCRIPT"), ...bridge });
+      registrations.push({ id: script.id, ...where, ...injection });
     } catch (error) {
       issues[script.id] = error.message;
     }
@@ -197,14 +222,14 @@ export async function syncScripts(scripts, settings = {}) {
       if (registration.worldId) await enableMessaging(registration.worldId);
       if (!registered.has(registration.id)) await api.register([registration]);
       else if (!sameRegistration(previous.get(registration.id), registration)) await api.update([registration]);
-      active.push(registration.id);
+      if (!registration.id.endsWith(bridgeSuffix)) active.push(registration.id);
     } catch (error) {
-      issues[registration.id] = error.message;
+      issues[scriptIdOf(registration.id)] = error.message;
       if (!registered.has(registration.id)) continue;
       try {
         await api.unregister({ ids: [registration.id] });
       } catch (cleanup) {
-        const { name } = scripts.find(script => script.id === registration.id);
+        const { name } = scripts.find(script => script.id === scriptIdOf(registration.id));
         errors.push(`Chrome could not remove the previous registration for ${name}: ${cleanup.message}`);
       }
     }

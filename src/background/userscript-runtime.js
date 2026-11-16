@@ -2,7 +2,16 @@
 // anything outside its own body. Everything stays inside the closure except the APIs the script grants.
 export function installRuntime(config) {
   const allowed = family => config.allowed.includes(family);
-  const define = (name, value) => Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
+  // In the page itself the APIs can't be globals, or the page's own code could call them. They're collected here and
+  // handed to the wrapper around the script (see registration.js), which removes them from the page as it takes them.
+  const exported = {};
+  const define = (name, value) => {
+    if (config.page) exported[name] = value;
+    else Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
+  };
+  const handOff = () => {
+    if (config.page) Object.defineProperty(window, config.handoff, { value: { api: exported, failed: error => exported.failed?.(error) }, configurable: true });
+  };
   const info = Object.freeze({ ...config.info, script: Object.freeze(config.info.script) });
   define("GM_info", info);
   const api = { info };
@@ -59,13 +68,42 @@ export function installRuntime(config) {
     setInterval(check, 500);
   }
 
-  // Scripts injected into the page have no extension messaging, so they get only the APIs above.
-  if (config.page) {
+  // Scripts injected into the page reach the extension through the bridge in their isolated world (bridge.js).
+  // Without one, as when a page-world script runs with Run now, they keep only the APIs above.
+  if (config.page && !config.channel) {
     define("GM", Object.freeze(api));
+    handOff();
     return;
   }
 
-  const send = message => chrome.runtime.sendMessage({ id: config.id, token: config.token, ...message });
+  function bridgeTransport(channel) {
+    const pending = new Map();
+    let next = 0;
+    let markReady;
+    const ready = new Promise(resolve => { markReady = resolve; });
+    document.addEventListener(`${channel}:ready`, () => markReady());
+    document.addEventListener(`${channel}:reply`, event => {
+      let reply;
+      try {
+        reply = JSON.parse(/** @type {CustomEvent} */ (event).detail);
+      } catch {
+        return;
+      }
+      const entry = pending.get(reply.requestId);
+      if (!entry) return;
+      pending.delete(reply.requestId);
+      if ("failure" in reply) entry.reject(new Error(reply.failure));
+      else entry.resolve(reply.response);
+    });
+    document.dispatchEvent(new CustomEvent(`${channel}:hello`));
+    return message => ready.then(() => new Promise((resolve, reject) => {
+      const requestId = String(++next);
+      pending.set(requestId, { resolve, reject });
+      document.dispatchEvent(new CustomEvent(`${channel}:request`, { detail: JSON.stringify({ requestId, message }) }));
+    }));
+  }
+  const send = config.page ? bridgeTransport(config.channel)
+    : message => chrome.runtime.sendMessage({ id: config.id, token: config.token, ...message });
   const report = message => {
     try {
       send(message).catch(() => {});
@@ -87,19 +125,33 @@ export function installRuntime(config) {
     value: (revision, results) => report({ type: "recipe-run", revision, results })
   });
   report({ type: "run" });
-  addEventListener("error", event => report({ type: "error", message: event.message, line: event.lineno, column: event.colno }));
-  addEventListener("unhandledrejection", event => report({ type: "error", message: String(event.reason?.message ?? event.reason) }));
+  // In its own world every error is the script's. In the page, errors from the site's code arrive too, so only what
+  // the script's wrapper catches is reported.
+  if (config.page) {
+    exported.failed = error => report({ type: "error", message: String(error?.message ?? error), line: 0, column: 0 });
+  } else {
+    addEventListener("error", event => report({ type: "error", message: event.message, line: event.lineno, column: event.colno }));
+    addEventListener("unhandledrejection", event => report({ type: "error", message: String(event.reason?.message ?? event.reason) }));
+  }
 
   const callbacks = new Map();
-  Object.defineProperty(globalThis, Symbol.for("tailorscript.callback"), {
-    value: (kind, id, detail) => {
-      try {
-        callbacks.get(`${kind}:${id}`)?.(detail);
-      } catch (error) {
-        warn(error);
-      }
+  const callback = (kind, id, detail) => {
+    try {
+      callbacks.get(`${kind}:${id}`)?.(detail);
+    } catch (error) {
+      warn(error);
     }
-  });
+  };
+  if (config.page) {
+    document.addEventListener(`${config.channel}:callback`, event => {
+      try {
+        const { kind, id, detail } = JSON.parse(/** @type {CustomEvent} */ (event).detail);
+        callback(kind, id, detail);
+      } catch {
+        // Not a message from the bridge.
+      }
+    });
+  } else Object.defineProperty(globalThis, Symbol.for("tailorscript.callback"), { value: callback });
 
   // GM_getValue and friends are synchronous, so they read a snapshot taken when the script was registered.
   const cache = config.values;
@@ -439,4 +491,5 @@ export function installRuntime(config) {
   }
 
   define("GM", Object.freeze(api));
+  handOff();
 }

@@ -83,7 +83,9 @@ If Chrome's **Allow User Scripts** switch is off, the popup and manager say so a
 
 Open the page's developer tools (right-click, **Inspect**) and choose the **Tailorscript** tab. The builder lists the page's buttons, fields, links, headings, images, sections and pinned bars; pointing at one outlines it on the page, and **Pick on page** lets you click the element instead.
 
-Drag an element onto an action (Hide, Click, Fill in, Replace text, colours, font size, Outline, Add note, Shortcut, Popup button) or into the step list, or select it and choose the action. Steps run from top to bottom and can be dragged to reorder. For repeated elements, such as every product's button, a step can change one or all of them. **Test** tries the steps on the page and **Undo test** puts it back. **Save** stores the recipe as a script, which you can turn on from the panel; **View code** shows what was generated. Editing that code in the manager turns it into an ordinary script.
+Drag an element onto an action (Hide, Click, Fill in, Tick, Untick, Choose, Replace text, colours, font size, Outline, Add note, Shortcut, Popup button) or into the step list, or select it and choose the action. Steps run from top to bottom and can be dragged to reorder. For repeated elements, such as every product's button, a step can change one or all of them. **Test** tries the steps on the page and **Undo test** puts it back. **Save** stores the recipe as a script, which you can turn on from the panel; **View code** shows what was generated. Editing that code in the manager turns it into an ordinary script.
+
+The builder also reaches controls inside web components, such as Ionic's inputs. Each step remembers what its element is (its role, label, text and stable attributes such as `formcontrolname`) as well as a CSS selector, so if a site update breaks the selector, the script still finds the right element. Form steps are applied again if the page clears them after loading.
 
 ## Learn to write scripts
 

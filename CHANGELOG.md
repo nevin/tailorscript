@@ -4,6 +4,19 @@ All notable changes to Tailorscript are recorded here. Versions follow [Semantic
 
 ## [Unreleased]
 
+### Added
+- The visual builder reaches controls inside web components, such as Ionic's inputs and buttons, when listing, picking and running steps. Selectors step into a component with ` >>> `.
+- Builder steps no longer rely on a CSS selector alone. Each remembers its element's role, label, text and stable attributes such as `formcontrolname`; if the selector stops matching or matches the wrong element, the script finds the element by that description instead. Step cards say what they look for, such as “Finds the text box Email”.
+- New builder actions: **Tick**, **Untick** and **Choose**, for checkboxes, radio buttons and dropdowns. Each control starts with the action that suits it.
+- Scripts can use the page's own code together with GM APIs. `unsafeWindow` is now the page's window, as in Tampermonkey: scripts that ask for it, or say `@inject-into page`, run in the page, and their GM calls go through a private bridge in the script's own world. The page can't call the GM functions.
+- When a run fails with something like “$ is not defined”, the editor offers a **Run in the page** fix.
+
+### Changed
+- Form steps are applied again whenever the page has undone them, such as a framework clearing a form just after it loads, without touching a field you're typing in.
+- Imported Tampermonkey and Violentmonkey scripts that ask for no APIs run in the page, as they did there.
+- Selectors avoid the state classes Angular, Ionic and similar frameworks add and remove (`ng-pristine`, `ion-touched`, `has-focus`) and numbered ids such as `ion-input-0`, and prefer `formcontrolname` and component `label` attributes.
+- Recipes saved by earlier versions of the builder still open after the builder's own code changes, and are brought up to date when saved.
+
 ### Fixed
 - Backups compressed again with macOS Finder now import; the hidden `__MACOSX` copies it adds are ignored.
 - Entries in a Tampermonkey text export that aren't scripts are left out, and the review says how many.

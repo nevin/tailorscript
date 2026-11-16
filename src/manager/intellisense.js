@@ -260,7 +260,17 @@ export function diagnose(source, { runError, meta = metadataLines(source) } = {}
 
   if (runError?.line) {
     const line = lineRange(source, runError.line);
-    found.push({ ...line, severity: "error", message: `Last run failed here: ${runError.message}` });
+    // "$ is not defined" and the like usually mean the script expects something the page itself provides, such as
+    // its jQuery. Scripts run apart from the page unless they ask to run in it.
+    const missing = runError.message.match(/^(?:Uncaught )?ReferenceError: ([\w$]+) is not defined$|^([\w$]+) is not defined$/);
+    const name = missing?.[1] ?? missing?.[2];
+    if (name && metadata?.injectInto === "content" && block) {
+      found.push({
+        ...line, severity: "error",
+        message: `Last run failed here: ${runError.message}. If ${name} is part of the site's own code, run the script in the page so it can use it.`,
+        actions: [{ name: "Run in the page", change: minimalChange(source, addMetadata(source, "inject-into", "page")) }]
+      });
+    } else found.push({ ...line, severity: "error", message: `Last run failed here: ${runError.message}` });
   }
   return found;
 }

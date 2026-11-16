@@ -182,14 +182,16 @@ console.log(\`\${GM_info.script.name} \${GM_info.script.version} is running in \
   {
     id: "unsafeWindow",
     title: "Use the page's own variables",
-    lead: "Scripts run apart from the page's JavaScript. They share the page's content, so `document` works as usual, but they can't see variables or functions the page defined. Add `@inject-into page` to run inside the page instead.",
+    lead: "Scripts normally run apart from the page's JavaScript. They share the page's content, so `document` works as usual, but they can't see variables or functions the page defined, such as its jQuery. Ask for `unsafeWindow`, or add `@inject-into page`, and the script runs inside the page instead.",
     apis: ["unsafeWindow"],
-    example: header("Read a page variable", ["inject-into page", "grant       unsafeWindow"]) + `
-// A page that sets window.appConfig can be read like this.
-console.log("The page's settings:", unsafeWindow.appConfig);`,
+    example: header("Fill a form with the site's own code", ["grant       unsafeWindow", "grant       GM_getValue"]) + `
+// A page that defines window.app.fill() can be driven like this, with a value the script stored earlier.
+unsafeWindow.app?.fill(GM_getValue("nickname", "Sam"));`,
     notes: [
-      "With `@inject-into page` the script can call the page's functions and the page can see the script's. Use it only on sites you trust.",
-      "A script running inside the page can use only `GM_addStyle`, `GM_info` and `unsafeWindow`. Stored values, requests, menu commands and the rest need the default, separate mode.",
+      "`unsafeWindow` is the page's own window, as in Tampermonkey. Scripts that ask for it run in the page, and their other GM APIs keep working.",
+      "`@inject-into page` does the same for a script that doesn't use `unsafeWindow`, for example one that calls the page's `$` directly. `@inject-into content` keeps a script apart even when it asks for `unsafeWindow`.",
+      "In the page, the site's code can see the script's own variables, so use it only on sites you trust. The GM functions themselves stay private to the script.",
+      "If a run fails with something like “$ is not defined”, the editor offers a Run in the page fix.",
       "Most scripts never need this. Reading and changing what is on the page works without it."
     ]
   }
@@ -223,6 +225,6 @@ export const mistakes = [
   },
   {
     problem: "The script can't see a variable the page defines",
-    fix: "Scripts run apart from the page's JavaScript. See “Use the page's own variables” above."
+    fix: "Scripts run apart from the page's JavaScript unless they ask to run in it. See “Use the page's own variables” above; when a run fails with “… is not defined”, the editor offers a Run in the page fix."
   }
 ];

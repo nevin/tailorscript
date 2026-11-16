@@ -97,11 +97,23 @@ test("registers @require files before the script, globs, page scripts and manual
   const state = await syncScripts([withLib, page, manual]);
   assert.deepEqual(state.active, ["A", "P"]);
   assert.deepEqual(state.manual, ["M"]);
-  const [a, p] = mock.registered;
+  const byId = id => mock.registered.find(registration => registration.id === id);
+  const [a, p, bridge] = [byId("A"), byId("P"), byId("P::bridge")];
   assert.deepEqual(a.js.slice(1).map(({ code }) => code), ["lib();", withLib.source]);
   assert.deepEqual(a.includeGlobs, ["https://a.com/*", "https://b.com/*"]);
   assert.equal(p.world, "MAIN");
   assert.equal(p.worldId, undefined);
+  // The page-world script gets its APIs from a wrapper on its first line, and its bridge runs just before it.
+  const pageSource = p.js.at(-1).code;
+  assert.match(pageSource.split("\n")[0], /^\(function \(__tailorscript\) \{( "use strict";)? const \{ GM, GM_info, unsafeWindow \} = __tailorscript\.api; try \{ /);
+  const sourceLines = page.source.split("\n");
+  assert.equal(pageSource.split("\n").indexOf(sourceLines.at(-1)), sourceLines.length - 1, "the script's lines keep their numbers");
+  assert.equal(mock.registered.indexOf(bridge), mock.registered.indexOf(p) - 1);
+  assert.equal(bridge.world, "USER_SCRIPT");
+  assert.equal(bridge.worldId, "P");
+  assert.deepEqual(bridge.matches, p.matches);
+  assert.match(bridge.js[0].code, /tailorscript-[0-9a-f]{24}/);
+  assert.doesNotMatch(p.js[0].code, /"token"/, "the page half never gets the token");
 });
 
 test("reports scripts whose dependencies weren't downloaded", async () => {
@@ -191,11 +203,12 @@ test("GM.xmlHttpRequest decodes responses and calls handlers", async () => {
 test("gives each script's world messaging and forgets worlds that are no longer used", async () => {
   const page = script("P", "// @inject-into page\n");
   await syncScripts([script("A"), script("B"), page]);
-  assert.deepEqual([...mock.worlds.keys()].sort(), ["", "A", "B"], "page-world scripts have no world of their own");
+  assert.deepEqual([...mock.worlds.keys()].sort(), ["", "A", "B", "P"], "a page-world script's bridge has the script's world");
   assert.ok([...mock.worlds.values()].every(config => config.messaging));
   await syncScripts([script("B")]);
   assert.deepEqual([...mock.worlds.keys()].sort(), ["", "B"]);
   assert.ok(mock.calls.some(call => call.join(":") === "resetWorld:A"));
+  assert.ok(mock.calls.some(call => call.join(":") === "resetWorld:P"));
 });
 
 test("the runtime provides the APIs scripts from other managers often use", async () => {

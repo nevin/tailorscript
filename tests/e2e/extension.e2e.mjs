@@ -15,6 +15,7 @@ import { zip } from "../helpers/zip.mjs";
 import { topics } from "../../src/guide/content.js";
 
 import { probe } from "../../src/devtools/probe.js";
+import { createLocator } from "../../src/devtools/locator.js";
 
 let browser;
 let server;
@@ -25,6 +26,33 @@ let manager;
 
 const header = (name, lines) => `// ==UserScript==\n// @name ${name}\n${lines.map(line => `// @${line}`).join("\n")}\n// ==/UserScript==\n`;
 const site = () => `http://localhost:${port}`;
+
+// A form built the way Ionic, Angular and React apps build them: a web component with the real <input> in its shadow
+// root, a numbered id and state classes, and a field the page clears just after it loads. ?redesign swaps the
+// component for a plain input with the same label, as a site update might.
+const frameworkForm = `<!doctype html><title>Framework form</title>
+<script>
+customElements.define("fake-input", class extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" }).innerHTML = "<input>";
+    this.inner = this.shadowRoot.querySelector("input");
+    this.inner.addEventListener("input", () => { this.value = this.inner.value; this.dispatchEvent(new CustomEvent("ionInput", { bubbles: true })); });
+  }
+  connectedCallback() { this.inner.setAttribute("aria-label", this.getAttribute("label") || ""); }
+});
+</script>
+<form>
+  <div id="email-slot"><fake-input id="ion-input-0" class="ng-pristine ng-untouched sc-ion-input-md" formcontrolname="email" label="Email"></fake-input></div>
+  <label><input type="checkbox" class="ng-pristine"> I agree</label>
+  <label><input type="radio" name="plan" value="basic"> Basic</label> <label><input type="radio" name="plan" value="pro"> Pro</label>
+  <select aria-label="Country"><option value="">Choose</option><option value="nz">New Zealand</option><option value="in">India</option></select>
+  <input aria-label="Nickname" id="nick">
+</form>
+<script>
+  if (location.search === "?redesign") document.querySelector("#email-slot").innerHTML = '<div class="v2"><input aria-label="Email" name="emailAddress"></div>';
+  setTimeout(() => { document.querySelector("#nick").value = ""; }, 900);
+</script>`;
 
 // Sends a message the way the manager page does and returns the registration state.
 async function send(message) {
@@ -57,6 +85,12 @@ before(async () => {
     const { pathname } = new URL(request.url, "http://localhost");
     if (pathname === "/api") {
       response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ host: request.headers.host }));
+    } else if (pathname === "/page-app.html") {
+      // A site whose own code a script wants to use, as form-filling scripts written for Tampermonkey often do.
+      response.writeHead(200, { "content-type": "text/html" }).end(`<!doctype html><title>App</title><input id="nick">
+<script>window.app = { user: "Pat", fill(value) { document.querySelector("#nick").value = value; } }; window.$ = s => document.querySelector(s);</script>`);
+    } else if (pathname === "/framework-form.html") {
+      response.writeHead(200, { "content-type": "text/html" }).end(frameworkForm);
     } else if (pathname === "/hello.user.js") {
       response.writeHead(200, { "content-type": "text/javascript" })
         .end(header("Hello install", ["match http://localhost/*", "version 1.2.0", "grant none"]) + 'document.documentElement.setAttribute("data-installed", "yes");');
@@ -282,8 +316,9 @@ test("visual recipe can be previewed, saved, reopened and applied after reload",
 
     await page.evaluate(() => document.body.append(document.createElement("h1")));
     await panel.click("#test");
-    await panel.waitForFunction(() => document.querySelector("#steps .test-result").textContent.includes("expected 1 match(es), found 2"));
-    assert.equal(await page.$eval("h1", element => getComputedStyle(element).display), "block");
+    // The selector now finds two headings; the step's description picks the one it was made for.
+    await panel.waitForFunction(() => document.querySelector("#steps .test-result").textContent.includes("found by its label"));
+    assert.deepEqual(await page.$$eval("h1", headings => headings.map(heading => getComputedStyle(heading).display)), ["none", "block"]);
     await panel.click("#undo");
 
     await panel.click("#save-recipe");
@@ -292,7 +327,7 @@ test("visual recipe can be previewed, saved, reopened and applied after reload",
     await panel.reload();
     await panel.waitForFunction(id => [...document.querySelector("#saved").options].some(option => option.value === id), {}, id);
     await panel.select("#saved", id);
-    await panel.waitForFunction(() => document.querySelector(".target-status").textContent.includes("found 2"));
+    await panel.waitForFunction(() => document.querySelector(".target-status").textContent.includes("found by its label"));
     await panel.$eval("#steps .advanced button", button => button.click());
     await panel.waitForFunction(() => document.querySelector("#status").textContent.startsWith("Click the new element"));
     await page.evaluate(() => {
@@ -654,7 +689,7 @@ test("builder detects labelled and custom form controls beyond the generic scan 
         <button type="button" aria-haspopup="listbox">Choose country</button>
         <input type="hidden" name="secret">
       </form>`);
-    const { items } = await page.evaluate(probe, "scan");
+    const { items } = await page.evaluate(`(${probe})("scan", null, ${createLocator})`);
     const item = label => items.find(entry => entry.label === label);
     assert.equal(item("Email address")?.selector, "#email");
     assert.equal(item("Newsletter")?.kind, "button");
@@ -662,7 +697,8 @@ test("builder detects labelled and custom form controls beyond the generic scan 
     assert.equal(item("Choose country")?.kind, "button");
     assert.equal(item("secret"), undefined);
     const label = await page.$("label span");
-    const selected = await page.evaluate(probe, "describe", label);
+    const selected = await page.evaluate((probeSource, locatorSource, element) =>
+      (0, eval)(`(${probeSource})`)("describe", element, (0, eval)(`(${locatorSource})`)), probe.toString(), createLocator.toString(), label);
     assert.equal(selected.selector, "#email");
   } finally {
     await page.close();
@@ -686,4 +722,101 @@ if (location.search === "?set") GM_setValue("color", "green");`;
   assert.equal(await attribute(listener, "data-color"), "green:true", "the other tab hears it as remote");
   await setter.close();
   await listener.close();
+});
+
+test("the builder reaches web components, fills forms that reset, and finds fields after a redesign", async () => {
+  const page = await openPage("/framework-form.html");
+  const panel = await browser.newPage();
+  const session = await page.createCDPSession();
+  await panel.exposeFunction("inspectFixture", async expression => {
+    const result = await session.send("Runtime.evaluate", { expression, returnByValue: true });
+    return { value: result.result.value, error: Boolean(result.exceptionDetails) };
+  });
+  const tabId = await manager.evaluate(async url => (await chrome.tabs.query({ url })).at(-1).id, page.url());
+  await panel.evaluateOnNewDocument(tabId => {
+    chrome.devtools = {
+      inspectedWindow: { tabId, eval(expression, callback) { globalThis.inspectFixture(expression).then(({ value, error }) => callback(value, error)); } },
+      network: { onNavigated: { addListener() {} } }
+    };
+  }, tabId);
+  try {
+    await panel.goto(`chrome-extension://${extensionId}/devtools/panel.html`);
+    await panel.waitForSelector("#elements .item");
+    const items = await panel.$$eval("#elements .item .item-label", nodes => nodes.map(node => [node.textContent, node.title]));
+    const email = items.find(([label]) => label === "Email");
+    assert.ok(email, `the input inside the web component is listed: ${JSON.stringify(items)}`);
+    assert.match(email[1], / >>> input/);
+    assert.doesNotMatch(email[1], /ion-input-0|ng-pristine|sc-ion/, "numbered ids and state classes aren't used");
+
+    const add = label => panel.evaluate(label => [...document.querySelectorAll("#elements .item")]
+      .find(row => row.querySelector(".item-label").textContent.startsWith(label)).querySelector(".add").click(), label);
+    const setValue = (index, value) => panel.$eval(`#steps .step:nth-child(${index}) .step-action input:not([hidden])`, (input, value) => {
+      input.value = value;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }, value);
+    for (const label of ["Email", "I agree", "Pro", "Country", "Nickname"]) await add(label);
+    const actions = await panel.$$eval("#steps .step-action select", selects => selects.map(select => select.value));
+    assert.deepEqual(actions, ["fill", "check", "check", "choose", "fill"], "each control starts with the action that suits it");
+    assert.match(await panel.$eval("#steps .step .step-finds", node => node.textContent), /text box “Email”/);
+    await setValue(1, "sam@example.com");
+    await setValue(4, "India");
+    await setValue(5, "Sam");
+
+    await panel.$eval("#test", button => button.click());
+    await panel.waitForFunction(() => [...document.querySelectorAll(".test-result")].filter(node => node.textContent).length === 5, { polling: 100 });
+    const state = () => page.evaluate(() => ({
+      email: document.querySelector("fake-input")?.shadowRoot.querySelector("input").value ?? document.querySelector("[name=emailAddress]").value,
+      agreed: document.querySelector("[type=checkbox]").checked,
+      plan: document.querySelector("[name=plan]:checked")?.value,
+      country: document.querySelector("select").value,
+      nickname: document.querySelector("#nick").value
+    }));
+    assert.deepEqual(await state(), { email: "sam@example.com", agreed: true, plan: "pro", country: "in", nickname: "Sam" });
+    assert.equal(await page.$eval("fake-input", host => host.value), "sam@example.com", "the component heard the input event");
+    await panel.$eval("#undo", button => button.click());
+    await page.waitForFunction(() => !document.querySelector("[type=checkbox]").checked, { polling: 100 });
+
+    await panel.$eval("#save-recipe", button => button.click());
+    await panel.waitForFunction(() => document.querySelector("#saved").value !== "", { polling: 100 });
+    const id = await panel.$eval("#saved", select => select.value);
+    await send({ type: "toggle", id, enabled: true });
+    await page.reload();
+    // The page clears the nickname at 0.9 s; the script fills it again.
+    await page.waitForFunction(() => document.querySelector("#nick").value === "Sam" && performance.now() > 2000, { polling: 100, timeout: 8000 });
+    assert.deepEqual(await state(), { email: "sam@example.com", agreed: true, plan: "pro", country: "in", nickname: "Sam" });
+
+    await page.goto(`${site()}/framework-form.html?redesign`);
+    await page.waitForFunction(() => document.querySelector("[name=emailAddress]")?.value === "sam@example.com", { polling: 100, timeout: 8000 });
+  } finally {
+    await panel.close();
+    await page.close();
+  }
+});
+
+test("scripts can use the page's own code together with GM APIs", async () => {
+  await manager.evaluate(() => chrome.storage.local.set({ "values:page-app": { nick: "Sammy" } }));
+  const tampermonkeyStyle = header("Page app", ["match http://localhost/*", "grant GM_getValue", "grant GM_setValue",
+    "grant unsafeWindow", "grant GM.xmlHttpRequest", "grant GM_registerMenuCommand", "connect 127.0.0.1"]) + `
+unsafeWindow.app.fill(GM_getValue("nick", "missing"));
+GM_setValue("user", unsafeWindow.app.user);
+GM_registerMenuCommand("Shout", () => { $("#nick").value = $("#nick").value.toUpperCase(); });
+GM.xmlHttpRequest({ url: "http://127.0.0.1:${port}/api", responseType: "json" })
+  .then(response => document.documentElement.setAttribute("data-page-app", response.response.host));`;
+  const state = await send({ type: "save", id: "page-app", script: { source: tampermonkeyStyle, enabled: true }, expected: null });
+  assert.deepEqual(state.issues, {});
+  const page = await openPage("/page-app.html");
+  assert.equal(await attribute(page, "data-page-app"), `127.0.0.1:${port}`, "requests go through the bridge");
+  assert.equal(await page.$eval("#nick", input => input.value), "Sammy", "the page's own function ran with a stored value");
+  assert.equal(await page.evaluate(() => typeof window.GM_setValue + typeof window.GM), "undefinedundefined", "APIs aren't page globals");
+  await manager.waitForFunction(async () => (await chrome.storage.local.get("values:page-app"))["values:page-app"].user === "Pat", { polling: 100, timeout: 5000 });
+
+  // A popup menu command reaches the script through its bridge and runs page code.
+  const tabId = await manager.evaluate(async url => (await chrome.tabs.query({ url })).at(-1).id, page.url());
+  await manager.waitForFunction(async tabId => Boolean((await chrome.storage.session.get("tabRuns")).tabRuns?.[tabId]?.menus?.["page-app"]?.length),
+    { polling: 100, timeout: 5000 }, tabId);
+  const { tabRuns } = await manager.evaluate(() => chrome.storage.session.get("tabRuns"));
+  await send({ type: "menu-run", id: "page-app", tabId, commandId: tabRuns[tabId].menus["page-app"][0].commandId });
+  await page.waitForFunction(() => document.querySelector("#nick").value === "SAMMY", { polling: 100, timeout: 5000 });
+  await page.close();
+  await send({ type: "toggle", id: "page-app", enabled: false });
 });

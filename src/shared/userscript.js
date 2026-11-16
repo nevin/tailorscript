@@ -27,9 +27,6 @@ export const supportedGrants = ["none", ...Object.values(grantFamilies).flat()];
 // Change listeners report the value before the change, so they need the snapshot too.
 export const syncValueGrants = ["GM_getValue", "GM_setValue", "GM_deleteValue", "GM_listValues", "GM_getValues", "GM_setValues",
   "GM_deleteValues", ...grantFamilies.valueListener];
-// APIs that work without the extension, so scripts injected into the page itself can use them.
-const pageGrants = ["none", "unsafeWindow", ...grantFamilies.addStyle, ...grantFamilies.addElement, ...grantFamilies.log,
-  ...grantFamilies.info, ...grantFamilies.window, ...grantFamilies.urlChange];
 
 export function allows(grants, family) {
   return grantFamilies[family].some(grant => grants.includes(grant));
@@ -183,10 +180,11 @@ export function parseSource(source) {
   const runAt = first("run-at") || "document-idle";
   const manual = runAt === "context-menu";
   if (!manual && !timings[runAt]) throw new Error(`Unsupported @run-at: ${runAt}`);
-  const injectInto = ["page"].includes(first("inject-into")) || first("sandbox") === "raw" ? "page" : "content";
-  if (injectInto === "page" && grants.some(grant => !pageGrants.includes(grant))) {
-    throw new Error("Scripts injected into the page can only use @grant none, GM_addStyle, GM_info or unsafeWindow.");
-  }
+  // unsafeWindow means the page's own window, as in Tampermonkey, so scripts that ask for it run in the page; their
+  // GM APIs reach the extension through a bridge. @inject-into content keeps a script in its own world regardless.
+  const declaredInject = first("inject-into");
+  const injectInto = declaredInject === "page" || first("sandbox") === "raw" ||
+    (grants.includes("unsafeWindow") && declaredInject !== "content") ? "page" : "content";
 
   const requires = all("require");
   for (const url of requires) {

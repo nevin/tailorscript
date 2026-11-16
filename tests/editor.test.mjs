@@ -108,3 +108,15 @@ test("diagnose flags http downloads with a Use https fix", () => {
   assert.equal(source.slice(warning.from, warning.to), "http://cdn.example/lib.js");
   assert.match(apply(source, warning.actions[0].change), /@require {5}https:\/\/cdn\.example\/lib\.js/);
 });
+
+test("a run that fails on a name the page provides offers to run the script in the page", () => {
+  const source = userscript("$(\"#email\").val(\"x\");");
+  const line = source.split("\n").length;
+  const [problem] = diagnose(source, { runError: { line, message: "Uncaught ReferenceError: $ is not defined" } }).filter(item => item.message.startsWith("Last run"));
+  assert.match(problem.message, /part of the site's own code/);
+  assert.equal(problem.actions[0].name, "Run in the page");
+  const fixed = apply(source, problem.actions[0].change);
+  assert.match(fixed, /\/\/ @inject-into page/);
+  assert.equal(diagnose(fixed, { runError: { line, message: "$ is not defined" } }).find(item => item.message.startsWith("Last run")).actions, undefined,
+    "no fix once it already runs in the page");
+});

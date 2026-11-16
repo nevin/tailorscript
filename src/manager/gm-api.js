@@ -63,7 +63,7 @@ export const gmApis = {
   "GM.getResourceText": { params: ["name: string"], returns: "Promise<string>", doc: "Returns the text of a file declared with @resource." },
   GM_getResourceURL: { params: ["name: string"], returns: "string", doc: "Returns a data: URL for a file declared with @resource." },
   "GM.getResourceUrl": { params: ["name: string"], returns: "Promise<string>", doc: "Returns a data: URL for a file declared with @resource." },
-  unsafeWindow: { kind: "property", type: "Window", doc: "The window object. Scripts run in an isolated world, so add @inject-into page to reach the page's own variables." }
+  unsafeWindow: { kind: "property", type: "Window", doc: "The page's own window, with the site's variables and functions. Asking for it runs the script in the page; its other GM APIs still work." }
 };
 
 export function signature(name) {
@@ -89,7 +89,7 @@ export const metadataKeys = {
   "run-at": "When the script runs: document-start, document-end, document-idle (default), or context-menu for Run now only.",
   "all-frames": "Also run inside frames on matching pages.",
   noframes: "Run only in the top-level page. This is the default.",
-  "inject-into": "page runs the script in the page's own context so it can use the page's variables; content (default) keeps it isolated.",
+  "inject-into": "page runs the script inside the page so it can use the site's own code; GM APIs still work. content keeps it apart from the page, the default unless it asks for unsafeWindow.",
   sandbox: "raw is the same as @inject-into page.",
   updateURL: "Where to check for a newer @version.",
   downloadURL: "Where to download updates from.",

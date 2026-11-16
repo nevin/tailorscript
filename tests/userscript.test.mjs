@@ -26,7 +26,10 @@ test("parseSource rejects metadata it can't honour", () => {
   assert.throws(() => parseSource(userscript("x;", "// @require ftp://cdn.example/x.js\n")), /@require needs an http/);
   assert.throws(() => parseSource(userscript("x;", "// @resource logo\n")), /@resource name/);
   assert.throws(() => parseSource(userscript("x;", "// @noframes\n// @all-frames\n")), /either @all-frames or @noframes/);
-  assert.throws(() => parseSource(userscript("x;", "// @inject-into page\n// @grant GM.getValue\n")), /injected into the page/);
+  // Page-world scripts can use any API now, through the bridge; unsafeWindow alone puts a script in the page.
+  assert.equal(parseSource(userscript("x;", "// @inject-into page\n// @grant GM.getValue\n")).injectInto, "page");
+  assert.equal(parseSource(userscript("x;", "// @grant unsafeWindow\n// @grant GM_setValue\n")).injectInto, "page");
+  assert.equal(parseSource(userscript("x;", "// @grant unsafeWindow\n// @inject-into content\n")).injectInto, "content");
   assert.throws(() => parseSource(userscript("x;", "// @include /[/\n")), /Invalid regular expression/);
   assert.throws(() => parseSource("// ==UserScript==\n// ==/UserScript==\nx;"), /@match/);
   assert.throws(() => parseSource(userscript("")), /JavaScript below/);

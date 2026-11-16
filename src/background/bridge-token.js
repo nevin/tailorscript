@@ -30,3 +30,9 @@ export async function authenticate(message) {
   }
   return message.id;
 }
+
+// The private event channel a page-world script and its bridge share (see bridge.js). Derived from the secret, so it
+// stays the same for each registration but can't be guessed by the page.
+export async function channelFor(id) {
+  return `tailorscript-${(await tokenFor(`${id}\nchannel`)).slice(0, 24)}`;
+}
