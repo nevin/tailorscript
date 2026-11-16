@@ -54,19 +54,29 @@ test("the builder runs as a DevTools tab with the page's real selection", async 
   // One tab, so there is one DevTools window and it belongs to the test page (installing opens a welcome tab).
   await new Promise(resolve => setTimeout(resolve, 1000));
   for (const open of await browser.pages()) await open.close();
+  // DevTools windows of the closed tabs can linger for a moment, so only a window opened after this point counts.
+  const earlier = new Set(browser.targets().filter(target => target.url().startsWith("devtools://")));
   const page = await browser.newPage();
   await page.goto(`http://localhost:${server.address().port}/sale`);
-  const devtoolsTarget = await browser.waitForTarget(target => target.url().startsWith("devtools://"), { timeout: 15000 });
+  const devtoolsTarget = await browser.waitForTarget(target => target.url().startsWith("devtools://") && !earlier.has(target), { timeout: 15000 });
   const devtools = await devtoolsTarget.asPage();
   // The panel's tab can sit in DevTools' overflow menu, so it is opened through DevTools' own views instead of a
-  // click. This uses DevTools internals, which may change between Chrome versions.
-  await devtools.waitForFunction(async () => {
+  // click. This uses DevTools internals, which may change between Chrome versions. DevTools may still be starting,
+  // so this retries until its views are ready.
+  const showPanel = async () => {
     const ui = await import("./ui/legacy/legacy.js");
     const id = [...ui.ViewManager.ViewManager.instance().views.keys()].find(key => key.endsWith("Tailorscript"));
     if (!id) return false;
     await ui.InspectorView.InspectorView.instance().showPanel(id);
     return true;
-  }, { timeout: 15000, polling: 500 });
+  };
+  const opening = Date.now() + 20000;
+  let shown = false;
+  while (!shown && Date.now() < opening) {
+    shown = await devtools.evaluate(showPanel).catch(() => false);
+    if (!shown) await new Promise(resolve => setTimeout(resolve, 300));
+  }
+  assert.ok(shown, "the Tailorscript tab exists in DevTools");
   const deadline = Date.now() + 15000;
   let panel;
   while (!panel && Date.now() < deadline) {
