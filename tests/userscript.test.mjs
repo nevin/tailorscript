@@ -135,3 +135,14 @@ test("explicit HTTP(S) ports are preserved and checked independently of the host
   assert.equal(runsOn(source, new URL("http://localhost:3001/page")), false);
   assert.throws(() => parseSource(source.replace(":3000", ":65536")), /Invalid HTTP/);
 });
+
+test("guided metadata edits can set and remove namespace and version without changing other directives", () => {
+  const original = header(["@match https://a.com/*", "@namespace old", "@version 1", "@grant none"]);
+  const next = updateTargets(original, "T", ["https://a.com/*"], undefined, { namespace: "com.example", version: "2.0-beta" });
+  assert.equal(parseSource(next).namespace, "com.example");
+  assert.equal(parseSource(next).version, "2.0-beta");
+  assert.deepEqual(parseSource(next).grants, ["none"]);
+  const removed = updateTargets(next, "T", ["https://a.com/*"], undefined, { namespace: "", version: "" });
+  assert.equal(parseSource(removed).namespace, "");
+  assert.equal(parseSource(removed).version, "");
+});

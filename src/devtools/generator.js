@@ -165,7 +165,10 @@ export function recipeRevision(marker) {
 }
 
 export function generateRecipe(recipe, { reportRuns = true } = {}) {
-  const { name, page, scope, watch, steps } = recipe;
+  const { name, page, scope, watch, steps, namespace, scriptVersion } = recipe;
+  if ([namespace, scriptVersion].some(value => /[\r\n\u2028\u2029]/.test(value ?? ""))) {
+    throw new Error("Namespace and script version must each fit on one line.");
+  }
   const url = new URL(page);
   if (!["http:", "https:"].includes(url.protocol)) throw new Error("Open an HTTP or HTTPS page first.");
   const title = name.replace(/\s+/g, " ").trim() || "Page customizations";
@@ -177,11 +180,14 @@ export function generateRecipe(recipe, { reportRuns = true } = {}) {
   const compiled = compile(usable);
   const menus = compiled.flatMap((step, index) => "menu" in step ? [[index, step.menu]] : []);
   const keys = compiled.some(step => "key" in step);
-  const canonical = { version: 2, name: title, page: url.origin + url.pathname, scope, watch, steps, ...(reportRuns ? { reportRuns: true } : {}) };
+  const canonical = { version: 2, name: title, page: url.origin + url.pathname, scope, watch, steps,
+    ...(namespace ? { namespace } : {}), ...(scriptVersion ? { scriptVersion } : {}), ...(reportRuns ? { reportRuns: true } : {}) };
   const data = JSON.stringify(compiled, null, 2).replace(/\n/g, "\n  ");
   const marker = JSON.stringify(canonical).replace(/[\u2028\u2029]/g, char => char === "\u2028" ? "\\u2028" : "\\u2029");
   return `// ==UserScript==
-// @name        ${title}
+// @name        ${title}${namespace ? `
+// @namespace   ${namespace}` : ""}${scriptVersion ? `
+// @version     ${scriptVersion}` : ""}
 // @match       ${url.protocol}//${url.hostname}${matchPath}
 // @run-at      document-idle
 // @grant       ${menus.length ? "GM_registerMenuCommand" : "none"}
@@ -228,9 +234,24 @@ ${reportRuns ? `  let previous = [];
 `;
 }
 
+// The separator includes a statement boundary so a script ending without a semicolon can accept a visual block.
+const visualSeparator = "\n;\n// Tailorscript visual steps (managed by the builder)\n";
+
+export function separateVisualSteps(source) {
+  const index = source.lastIndexOf(visualSeparator);
+  return index < 0 ? { base: source, visual: "" }
+    : { base: source.slice(0, index), visual: source.slice(index + visualSeparator.length) };
+}
+
+export function appendVisualSteps(base, visual) {
+  return visual ? base + visualSeparator + visual : base;
+}
+
 // The recipe a script was generated from, or null once the script has been edited by hand. Recipes from the first
 // builder (version 1) come back upgraded and marked, since that builder's output can't be regenerated to check them.
 export function readRecipe(source) {
+  const { visual } = separateVisualSteps(source);
+  if (visual) source = visual;
   const marker = source.match(/^\/\/ Tailorscript recipe: (.+)$/m);
   if (!marker) return null;
   try {

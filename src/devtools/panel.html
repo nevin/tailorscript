@@ -18,7 +18,7 @@
       <button id="selected" type="button" title="Add the element selected in the Elements panel">Use Elements selection</button>
     </div>
     <div class="group grow">
-      <label class="sr-only" for="saved">Recipe</label>
+      <label class="sr-only" for="saved">Recipe or existing script</label>
       <select id="saved"><option value="">New recipe</option></select>
       <label class="sr-only" for="name">Script name</label>
       <input id="name" maxlength="100" value="Page customizations" placeholder="Script name">
@@ -71,12 +71,26 @@
         </ol>
       </div>
       <div class="generation-options">
+        <label>Namespace <input id="recipe-namespace" type="text" placeholder="Optional"></label>
+        <label>Script version <input id="recipe-version" type="text" placeholder="e.g. 1.0.0"></label>
         <label>Run on<select id="scope">
           <option value="site">Every page on this site</option>
           <option value="path">Only this page</option>
         </select></label>
         <label class="check"><input id="watch" type="checkbox"> Also change elements the page adds later</label>
       </div>
+      <details id="recipe-tools">
+        <summary>Page checks and recipe backup</summary>
+        <p>Use Dry run to inspect the current page without changing it. Navigate to another page and repeat to compare targets.</p>
+        <div class="group">
+          <button id="dry-run" type="button" disabled>Dry run</button>
+          <button id="clear-checks" type="button" hidden>Clear checks</button>
+          <button id="export-recipe" type="button" disabled>Export recipe JSON</button>
+          <button id="import-recipe" type="button">Import recipe JSON</button>
+          <input id="recipe-file" type="file" accept=".json,application/json" hidden>
+        </div>
+        <div id="page-checks"></div>
+      </details>
       <details id="code">
         <summary>View code</summary>
         <p id="preview-message" role="status"></p>
@@ -86,5 +100,13 @@
       </details>
     </section>
   </main>
+  <dialog id="recipe-review" aria-labelledby="recipe-review-title">
+    <h2 id="recipe-review-title">Review visual recipe</h2>
+    <p id="recipe-review-info"></p>
+    <div class="group">
+      <button id="load-recipe-file" class="primary" type="button">Open as new draft</button>
+      <form method="dialog"><button>Cancel</button></form>
+    </div>
+  </dialog>
 </body>
 </html>

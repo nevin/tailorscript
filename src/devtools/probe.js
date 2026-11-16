@@ -14,6 +14,20 @@ export function probe(command, argument) {
     if (rect.width < 2 || rect.height < 2) return false;
     return style.visibility !== "hidden" && style.display !== "none" && Number(style.opacity) > 0;
   };
+  const formFields = "input:not([type=hidden]), textarea, select, [role=textbox], [role=searchbox], [role=combobox], " +
+    "[role=spinbutton], [role=slider], [role=listbox], [role=option], [role=checkbox], [role=radio], [role=switch], " +
+    "[contenteditable]:not([contenteditable=false]), [aria-haspopup=listbox]";
+  const choiceRoles = ["checkbox", "radio", "switch", "slider", "listbox", "option"];
+  const inputActions = /^(button|submit|reset|image|checkbox|radio|range|file|color)$/;
+  function fieldTarget(element) {
+    const label = element.closest("label");
+    if (label?.control?.matches(formFields)) return label.control;
+    return element.closest(formFields) ?? element;
+  }
+  function visibleLabels(element) {
+    return [...(element.labels ?? [])].filter(label => !label.closest("[inert], [aria-hidden=true]") && visible(label));
+  }
+
   const squeeze = text => String(text ?? "").replace(/\s+/g, " ").trim();
   // Sections are named by what they are, since their text is everything inside them run together.
   const regions = { header: "Header", nav: "Navigation", main: "Main content", aside: "Sidebar", footer: "Footer", form: "Form",
@@ -28,7 +42,7 @@ export function probe(command, argument) {
       return named || (opening ? `${kind === "overlay" ? "Pinned" : "Section"}: ${opening}…` : element.localName);
     }
     const text = squeeze(referencedLabel(element)) || squeeze(element.getAttribute("aria-label")) || squeeze(element.getAttribute("alt")) ||
-      squeeze(element.getAttribute("placeholder")) || (element.labels?.[0] && squeeze(element.labels[0].innerText)) ||
+      (element.labels?.[0] && squeeze(element.labels[0].innerText)) || squeeze(element.getAttribute("placeholder")) ||
       (/^(button|submit|reset)$/.test(element.type) && squeeze(element.value)) || squeeze(element.innerText?.slice(0, 200)) ||
       squeeze(element.getAttribute("title")) || squeeze(element.getAttribute("name")) || element.id;
     return (text || element.tagName.toLowerCase()).slice(0, 70);
@@ -65,7 +79,7 @@ export function probe(command, argument) {
     const tag = CSS.escape(element.localName);
     const options = [];
     if (stable(element.id)) options.push([`#${CSS.escape(element.id)}`, "ID"]);
-    for (const attr of ["data-testid", "data-test", "data-qa", "data-cy", "name", "aria-label", "aria-labelledby", "placeholder"]) {
+    for (const attr of ["data-testid", "data-test", "data-qa", "data-cy", "name", "aria-label", "aria-labelledby", "placeholder", "autocomplete", "type"]) {
       const value = element.getAttribute(attr);
       if (!value || value.length > 80 || [...value].some(char => char.charCodeAt(0) < 32)) continue;
       options.push([`${tag}[${attr}=${quote(value)}]`, attr.startsWith("data-") ? "Test attribute" : "Named attribute"]);
@@ -177,10 +191,10 @@ export function probe(command, argument) {
   const kindOf = (element, rect = element.getBoundingClientRect(), position = getComputedStyle(element).position) => {
     const tag = element.tagName.toLowerCase();
     const role = element.getAttribute("role");
-    if ((position === "fixed" || position === "sticky") && rect.width * rect.height > 6000 && !/^(html|body)$/.test(tag)) return "overlay";
     if (role === "dialog" || role === "alertdialog" || tag === "dialog") return "overlay";
-    if (tag === "button" || tag === "summary" || ["button", "tab", "menuitem", "switch", "checkbox", "radio"].includes(role) || (tag === "input" && /^(button|submit|reset|image)$/.test(element.type))) return "button";
-    if (tag === "input" || tag === "textarea" || tag === "select" || role === "textbox" || role === "combobox" || role === "searchbox" || element.isContentEditable) return "field";
+    if (tag === "button" || tag === "summary" || ["button", "tab", "menuitem", ...choiceRoles].includes(role) || element.matches("[aria-haspopup=listbox]") || (tag === "input" && inputActions.test(element.type))) return "button";
+    if (tag === "input" || tag === "textarea" || tag === "select" || element.matches(formFields)) return "field";
+    if ((position === "fixed" || position === "sticky") && rect.width * rect.height > 6000 && !/^(html|body)$/.test(tag)) return "overlay";
     if (tag === "a" || role === "link") return "link";
     if (/^h[1-6]$/.test(tag) || role === "heading") return "heading";
     if (/^(img|video|audio|picture|svg|canvas|iframe)$/.test(tag)) return "media";
@@ -211,33 +225,47 @@ export function probe(command, argument) {
   };
 
   if (command === "scan") {
-    const notable = "button, input:not([type=hidden]), textarea, select, a[href], h1, h2, h3, h4, h5, h6, " +
+    const notable = "button, a[href], h1, h2, h3, h4, h5, h6, " +
       "img, video, iframe, header, nav, main, aside, footer, form, dialog, summary, article, " +
       "section[aria-label], section[aria-labelledby], [contenteditable]:not([contenteditable=false]), " +
       "[role=button], [role=tab], [role=menuitem], [role=switch], [role=checkbox], [role=radio], [role=link], " +
       "[role=textbox], [role=searchbox], [role=combobox], [role=heading], [role=dialog], [role=alertdialog], " +
       "[role=banner], [role=navigation], [role=search], [role=complementary], [role=contentinfo]";
     const candidates = [];
+    const inspected = new Set();
+    function consider(node, isField = false) {
+      if (inspected.has(node)) return;
+      inspected.add(node);
+      if (own(node) || node.closest("[inert], [aria-hidden=true]") || node.matches("input[type=hidden]")) return;
+      const known = isField || node.matches(notable);
+      const style = getComputedStyle(node);
+      if (!known && style.position !== "fixed" && style.position !== "sticky") return;
+      let rect = node.getBoundingClientRect();
+      if (!visible(node, rect, style) ||
+          (node.checkVisibility && !node.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }))) {
+        // Styled checkboxes and radios can hide the native input while leaving a clickable label.
+        if (!node.matches("input[type=checkbox], input[type=radio]")) return;
+        const label = visibleLabels(node)[0];
+        if (!label) return;
+        rect = label.getBoundingClientRect();
+      }
+      const inView = rect.bottom > 0 && rect.top < innerHeight && rect.right > 0 && rect.left < innerWidth;
+      if (!known && (!inView || rect.width * rect.height <= 6000)) return;
+      const kind = kindOf(node, rect, style.position);
+      if (kind === "media" && rect.width < 40) return;
+      candidates.push({ node, kind, inView, isField });
+    }
+
+    // Discover controls throughout the document even when a large section uses the generic scan budget.
+    const fields = document.querySelectorAll(formFields);
+    for (let index = 0; index < Math.min(fields.length, 2000); index++) consider(fields[index], true);
     const walker = document.createTreeWalker(document.body ?? document.documentElement, NodeFilter.SHOW_ELEMENT);
     let checked = 0;
     let node;
-    while ((node = walker.nextNode()) && checked < 6000) {
-      checked++;
-      if (!(node instanceof Element)) continue;
-
-      if (own(node) || node.closest("[inert], [aria-hidden=true]")) continue;
-      const known = node.matches(notable);
-      const style = getComputedStyle(node);
-      if (!known && style.position !== "fixed" && style.position !== "sticky") continue;
-      const rect = node.getBoundingClientRect();
-      const inView = rect.bottom > 0 && rect.top < innerHeight && rect.right > 0 && rect.left < innerWidth;
-      if (!known && (!inView || rect.width * rect.height <= 6000)) continue;
-      if (!visible(node, rect, style) || (node.checkVisibility && !node.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }))) continue;
-      const kind = kindOf(node, rect, style.position);
-      if (kind === "media" && rect.width < 40) continue;
-      candidates.push({ node, kind, inView });
+    while ((node = walker.nextNode()) && checked++ < 6000) {
+      if (node instanceof Element) consider(node);
     }
-    candidates.sort((a, b) => Number(b.inView) - Number(a.inView));
+    candidates.sort((a, b) => Number(b.inView) - Number(a.inView) || Number(b.isField) - Number(a.isField));
     const counts = {};
     const items = [];
     let omitted = 0;
@@ -273,23 +301,25 @@ export function probe(command, argument) {
       });
     }
     for (const item of items) delete item.node;
-    return { url: location.href, title: document.title, items, limited: Boolean(node) || omitted > 0 };
+    return { url: location.href, title: document.title, items, limited: Boolean(node) || fields.length > 2000 || omitted > 0 };
   }
 
-  if (command === "describe") return argument instanceof Element && argument.getRootNode() === document ? describe(argument) : null;
+  if (command === "describe") return argument instanceof Element && argument.getRootNode() === document ? describe(fieldTarget(argument)) : null;
   if (command === "count") return matches(argument);
-  if (command === "diagnose") {
-    return argument.map(({ selector, text, expectedCount, tag, all }) => {
+  if (command === "diagnose" || command === "check-recipe") {
+    const results = argument.map(({ selector, text, expectedCount, tag, all }) => {
       const elements = find(selector, text);
-      if (!elements) return "Invalid selector";
-      if (!elements.length) return "No match";
-      if (expectedCount != null && elements.length !== expectedCount) {
-        return `Expected ${expectedCount}, found ${elements.length}`;
+      if (!elements) return { count: null, message: "Invalid selector" };
+      const count = elements.length;
+      if (!count) return { count, message: "No match" };
+      if (expectedCount != null && count !== expectedCount) {
+        return { count, message: `Expected ${expectedCount}, found ${count}` };
       }
-      const targets = all ? [...elements] : [elements[0]];
-      if (tag && targets.some(element => element.localName !== tag)) return `Expected <${tag}>`;
-      return `Ready · ${elements.length} match(es)`;
+      const targets = all ? elements : [elements[0]];
+      if (tag && targets.some(element => element.localName !== tag)) return { count, message: `Expected <${tag}>` };
+      return { count, applied: targets.length, message: `Ready · ${count} match(es)` };
     });
+    return command === "diagnose" ? results.map(result => result.message) : { url: location.href, results };
   }
 
   // The argument is a selector, or { selector, text } for an element found by its text.
@@ -300,9 +330,10 @@ export function probe(command, argument) {
       clearBoxes();
       return 0;
     }
-    const rect = elements[0].getBoundingClientRect();
-    if (rect.bottom < 0 || rect.top > innerHeight) elements[0].scrollIntoView({ block: "center" });
-    outline(elements);
+    const targets = elements.slice(0, 30).map(element => visible(element) ? element : visibleLabels(element)[0] ?? element);
+    const rect = targets[0].getBoundingClientRect();
+    if (rect.bottom < 0 || rect.top > innerHeight) targets[0].scrollIntoView({ block: "center" });
+    outline(targets);
     return elements.length;
   }
 
@@ -318,7 +349,7 @@ export function probe(command, argument) {
     };
     const choose = event => {
       swallow(event);
-      if (event.target instanceof Element) state.picked = describe(event.target);
+      if (event.target instanceof Element && event.target.getRootNode() === document) state.picked = describe(fieldTarget(event.target));
       state.stopPick();
     };
     const cancel = event => {

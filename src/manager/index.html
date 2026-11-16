@@ -135,6 +135,10 @@
         <div class="setup-fields">
           <label for="setup-name">Script name</label>
           <input id="setup-name" type="text" placeholder="My script">
+          <div class="identity-fields">
+            <label>Namespace <input id="setup-namespace" type="text" placeholder="Optional"></label>
+            <label>Script version <input id="setup-version" type="text" placeholder="e.g. 1.0.0"></label>
+          </div>
           <label for="setup-sites">Sites where the script should run</label>
           <textarea id="setup-sites" rows="3" spellcheck="false" placeholder="https://example.com/*" aria-describedby="setup-help"></textarea>
           <p id="setup-help">One match rule per line. Use <code>/*</code> for every page on a site.</p>

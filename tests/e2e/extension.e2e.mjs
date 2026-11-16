@@ -14,6 +14,8 @@ import { distDir } from "../../scripts/lib/project.mjs";
 import { zip } from "../helpers/zip.mjs";
 import { topics } from "../../src/guide/content.js";
 
+import { probe } from "../../src/devtools/probe.js";
+
 let browser;
 let server;
 let port;
@@ -231,7 +233,7 @@ test("toolbar popup can change settings through the worker", async () => {
 });
 
 test("visual recipe can be previewed, saved, reopened and applied after reload", async () => {
-  const page = await openPage();
+  const page = await openPage("/visual-recipe-fixture.html");
   const panel = await browser.newPage();
   const session = await page.createCDPSession();
   // Drive the panel in Chrome and relay inspectedWindow.eval into the fixture tab.
@@ -312,6 +314,78 @@ test("visual recipe can be previewed, saved, reopened and applied after reload",
     await page.reload();
     await page.waitForFunction(() => getComputedStyle(document.querySelector("h1")).fontSize === "18px");
     await panel.waitForFunction(() => document.querySelector(".actual-result").textContent.includes("Last run · Changed 1"));
+    await panel.click("#recipe-tools summary");
+    await page.$eval("h1", element => element.style.setProperty("font-size", "25px", "important"));
+    await panel.click("#dry-run");
+    await panel.waitForFunction(() => document.querySelector("#page-checks").textContent.includes("Would affect 1"));
+    assert.equal(await page.$eval("h1", element => getComputedStyle(element).fontSize), "25px");
+
+    await page.goto(site() + "/second-page.html");
+    await page.$eval("h1", element => element.remove());
+    await panel.$eval("#dry-run", button => button.click());
+    await panel.waitForFunction(() => document.querySelectorAll(".page-check").length === 2);
+    assert.match(await panel.$eval("#page-checks", element => element.textContent), /second-page.*0 match/s);
+    await page.reload();
+    await page.waitForSelector("h1");
+    await panel.click("#scan");
+    await panel.waitForFunction(() => !document.querySelector("#scan").disabled);
+
+    const recipeFile = path.join(extensionDir, "visual.recipe.json");
+    await writeFile(recipeFile, JSON.stringify({
+      format: "tailorscript-visual-recipe", version: 1,
+      recipe: {
+        version: 2, name: "Imported visual", namespace: "com.example", scriptVersion: "2.4",
+        page: page.url(), scope: "site", watch: false,
+        steps: [{ selector: "h1", label: "Title", action: "hide" }]
+      }
+    }));
+    await (await panel.$("#recipe-file")).uploadFile(recipeFile);
+    await panel.waitForSelector("#recipe-review[open]");
+    assert.match(await panel.$eval("#recipe-review-info", element => element.textContent), /com\.example.*2\.4/);
+    await panel.click("#load-recipe-file");
+    await panel.waitForFunction(() => document.querySelector("#recipe-namespace").value === "com.example");
+    assert.equal(await panel.$eval("#saved", select => select.value), "");
+    await panel.evaluate(() => {
+      const click = HTMLAnchorElement.prototype.click;
+      HTMLAnchorElement.prototype.click = function () {
+        HTMLAnchorElement.prototype.click = click;
+        fetch(this.href).then(response => response.json()).then(file => {
+          document.documentElement.dataset.exportedRecipe = file.recipe.scriptVersion;
+        });
+      };
+    });
+    await panel.click("#export-recipe");
+    await panel.waitForFunction(() => document.documentElement.dataset.exportedRecipe === "2.4");
+    panel.once("dialog", dialog => dialog.accept());
+    const original = header("Existing script", ["match http://localhost/*", "namespace existing.test", "version 2.0"]) +
+      'document.body.dataset.existingScript = "yes";';
+    await send({ type: "save", id: "existing-visual", script: { source: original, enabled: true }, expected: null });
+    await panel.waitForSelector('#saved optgroup[label="Scripts for this page"] option[value="existing-visual"]');
+    await panel.select("#saved", "existing-visual");
+    await panel.evaluate(() => {
+      const heading = [...document.querySelectorAll("#elements .item")]
+        .find(row => row.querySelector(".item-label").textContent === "Test page");
+      heading.querySelector(".add").click();
+    });
+    assert.equal(await panel.$eval("#recipe-namespace", input => input.value), "existing.test");
+    assert.equal(await panel.$eval("#recipe-version", input => input.value), "2.0");
+    await panel.$eval("#recipe-version", input => {
+      input.value = "2.1";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await panel.click("#save-recipe");
+    await panel.waitForSelector('#saved optgroup[label="Visual recipes"] option[value="existing-visual"]');
+    const savedSource = await manager.evaluate(async () => (await chrome.storage.local.get("script:existing-visual"))["script:existing-visual"].source);
+    assert.match(savedSource, /@version\s+2\.1/);
+    assert.match(savedSource, /@namespace\s+existing\.test/);
+    assert.ok(savedSource.includes('document.body.dataset.existingScript = "yes";\n;\n'));
+    await panel.select("#saved", "");
+    await panel.select("#saved", "existing-visual");
+    assert.equal(await panel.$eval("#steps .step-action select", select => select.value), "hide");
+    assert.equal(await panel.$eval("#recipe-version", input => input.value), "2.1");
+    await page.reload();
+    await page.waitForFunction(() => document.body.dataset.existingScript === "yes" &&
+      getComputedStyle(document.querySelector("h1")).display === "none");
   } finally {
     await panel.close();
     await page.close();
@@ -493,8 +567,13 @@ test("manager adds tags through setup, groups scripts, and validates the draft",
     });
     await page.click("#setup summary");
     await page.type("#setup-tags", ", layout");
+    await page.type("#setup-namespace", "com.example");
+    await page.type("#setup-version", "1.2.3");
     await page.click("#apply-setup");
-    await page.waitForFunction(() => document.querySelector(".cm-content").textContent.includes("layout"));
+    await page.waitForFunction(() => {
+      const text = document.querySelector(".cm-content").textContent;
+      return text.includes("layout") && /@namespace\s+com\.example/.test(text) && /@version\s+1\.2\.3/.test(text);
+    });
     await page.click("#editor-validate");
     await page.waitForFunction(() => document.querySelector("#status").textContent.includes("are valid"));
     await page.focus(".cm-content");
@@ -557,6 +636,34 @@ test("import repair keeps valid scripts and explains URL rules before import", a
     await page.waitForFunction(() => document.querySelector(".url-check [role=status]").textContent.includes("Excluded by @exclude-match"));
     await page.evaluate(() => [...document.querySelectorAll("#review-content button")].find(button => button.textContent === "Import selected").click());
     await page.waitForFunction(() => document.querySelector("#status").textContent.includes("Imported 2 scripts"));
+  } finally {
+    await page.close();
+  }
+});
+
+test("builder detects labelled and custom form controls beyond the generic scan limit", async () => {
+  const page = await browser.newPage();
+  try {
+    await page.setContent("<div></div>".repeat(6100) + `
+      <form>
+        <label for="email"><span>Email address</span></label>
+        <input id="email" type="email" placeholder="name@example.com">
+        <label for="newsletter">Newsletter</label>
+        <input id="newsletter" type="checkbox" style="display:none">
+        <div role="spinbutton" aria-label="Quantity" tabindex="0">1</div>
+        <button type="button" aria-haspopup="listbox">Choose country</button>
+        <input type="hidden" name="secret">
+      </form>`);
+    const { items } = await page.evaluate(probe, "scan");
+    const item = label => items.find(entry => entry.label === label);
+    assert.equal(item("Email address")?.selector, "#email");
+    assert.equal(item("Newsletter")?.kind, "button");
+    assert.equal(item("Quantity")?.kind, "field");
+    assert.equal(item("Choose country")?.kind, "button");
+    assert.equal(item("secret"), undefined);
+    const label = await page.$("label span");
+    const selected = await page.evaluate(probe, "describe", label);
+    assert.equal(selected.selector, "#email");
   } finally {
     await page.close();
   }

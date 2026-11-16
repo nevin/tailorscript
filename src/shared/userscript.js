@@ -339,17 +339,38 @@ export function addMetadata(source, key, value) {
 }
 
 // Preserve the source body and metadata unrelated to the guided fields.
-/** @param {string} source @param {string} name @param {string[]} patterns @param {string[]} [tags] */
-export function updateTargets(source, name, patterns, tags) {
+/** @param {string} source @param {string} name @param {string[]} patterns @param {string[]} [tags] @param {{ namespace?: string, version?: string }} [identity] */
+export function updateTargets(source, name, patterns, tags, identity = {}) {
   const lines = source.split("\n");
   const start = lines.findIndex(line => /^\s*\/\/\s*==UserScript==\s*$/.test(line));
   const end = lines.findIndex((line, index) => index > start && /^\s*\/\/\s*==\/UserScript==\s*$/.test(line));
   if ((start < 0) !== (end < 0)) throw new Error("Complete the userscript metadata block before applying these settings.");
   const metadata = [headerLine("name", name.trim() || "Untitled script"), ...patterns.map(pattern => headerLine("match", pattern))];
+  const keys = new Set(["name", "match"]);
+  for (const key of ["namespace", "version"]) {
+    if (identity[key] === undefined) continue;
+    const value = identity[key].trim();
+    if (/[\r\n\u2028\u2029]/.test(value)) throw new Error(`@${key} must fit on one line.`);
+    keys.add(key);
+    if (value) metadata.push(headerLine(key, value));
+  }
+  if (tags) keys.add("tag");
   if (tags) metadata.push(...new Set(tags.map(tag => headerLine("tag", tag))));
   if (start < 0) return ["// ==UserScript==", ...metadata, "// ==/UserScript==", "", source].join("\n");
-  const other = lines.slice(start + 1, end).filter(line =>
-    !/^\s*\/\/\s*@(name|match)(?:\s|$)/.test(line) &&
-    !(tags && /^\s*\/\/\s*@tag(?:\s|$)/.test(line)));
+  const other = lines.slice(start + 1, end).filter(line => !keys.has(line.match(/^\s*\/\/\s*@([\w:.-]+)/)?.[1]));
   return [...lines.slice(0, start + 1), ...metadata, ...other, ...lines.slice(end)].join("\n");
+}
+
+// Updates just the two identity directives, preserving the body and other metadata byte for byte.
+export function updateScriptIdentity(source, { namespace, version }) {
+  const metadata = parseSource(source);
+  for (const [key, value] of Object.entries({ namespace, version })) {
+    if (metadata[key] === value) continue;
+    if (/[\r\n\u2028\u2029]/.test(value)) throw new Error(`@${key} must fit on one line.`);
+    const { headerText } = parseSource(source);
+    const directive = new RegExp(`^[ \t]*//[ \t]*@${key}(?:[ \t]+[^\r\n]*)?\r?\n`, "gm");
+    source = source.replace(headerText, () => headerText.replace(directive, ""));
+    if (value) source = addMetadata(source, key, value);
+  }
+  return source;
 }

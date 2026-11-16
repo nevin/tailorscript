@@ -72,10 +72,11 @@ export function setupDialogs(app) {
       }
       const { meta } = entry;
       const identical = app.scripts.find(script => script.source === entry.source);
-      const sameName = app.scripts.find(script => script.name === meta.name);
+      const sameIdentity = app.scripts.find(script => script.name === meta.name &&
+        (headerValues(script.source, "namespace")[0]?.trim() ?? "") === meta.namespace);
       const choice = document.createElement("select");
       choice.append(new Option("Add as a new script", "new"));
-      if (!identical && sameName) choice.append(new Option(`Replace “${sameName.name}”`, sameName.id));
+      if (!identical && sameIdentity) choice.append(new Option(`Replace “${sameIdentity.name}”`, sameIdentity.id));
       choice.append(new Option("Skip", "skip"));
       choice.value = [...choice.options].some(option => option.value === previousChoices[index])
         ? previousChoices[index] : identical ? "skip" : "new";
@@ -89,9 +90,10 @@ export function setupDialogs(app) {
       if (valueCount) notes.push(`Brings ${valueCount} stored ${valueCount === 1 ? "value" : "values"} with it.`);
       if (entry.wasEnabled === false) notes.push(`Was off in ${manager}.`);
       item.append(element("strong", meta.name),
+        ...(meta.namespace || meta.version ? [element("span", [meta.namespace, meta.version].filter(Boolean).join(" · "))] : []),
         element("span", ` — ${sites.join(", ") || "no sites"}${meta.excludeMatches.length + meta.excludes.length
           ? `; excludes ${[...meta.excludeMatches, ...meta.excludes].join(", ")}` : ""}`),
-        element("span", identical ? "Identical to a script in your library." : sameName ? "A script with this name already exists." : "", "import-note"));
+        element("span", identical ? "Identical to a script in your library." : sameIdentity ? "A script with this name and namespace already exists." : "", "import-note"));
       if (notes.length) item.append(bulletList(notes.map(text => ({ text, warning: text.startsWith("Uses ") }))));
       const check = element("details", undefined, "import-repair");
       check.append(element("summary", "Test URL"), urlCheck(() => entry.source));

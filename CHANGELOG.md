@@ -4,6 +4,17 @@ All notable changes to Tailorscript are recorded here. Versions follow [Semantic
 
 ## [Unreleased]
 
+## [0.10.0]
+
+### Added
+- Compare visual recipe targets across up to ten pages using a dry run that leaves each page unchanged.
+- Export visual recipe JSON and review the name, namespace, version, and target before opening a backup as a new draft.
+- Edit visual steps on existing scripts and set their namespace and version in the builder.
+- Repair invalid imports, explain URL matching rules, and see the latest per-step recipe execution results.
+
+### Fixed
+- Discover form controls beyond the general scan limit, resolve labels to their inputs, and recognize more custom controls.
+
 ## [0.9.1]
 
 ### Fixed

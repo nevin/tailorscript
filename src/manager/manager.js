@@ -68,6 +68,8 @@ const resultCount = $("#result-count");
 const clearFilters = $("#clear-filters", HTMLButtonElement);
 const filterCounts = [...document.querySelectorAll("[data-count]")];
 const groupScripts = $("#group-scripts", HTMLSelectElement);
+const setupNamespace = $("#setup-namespace", HTMLInputElement);
+const setupVersion = $("#setup-version", HTMLInputElement);
 const setupTags = $("#setup-tags", HTMLInputElement);
 const tagFilter = $("#tag", HTMLSelectElement);
 const sort = $("#sort", HTMLSelectElement);
@@ -363,6 +365,7 @@ function renderLibrary() {
       meta.append(state);
     }
     meta.append(element("span", siteSummary(metadata), "script-sites"));
+    if (metadata?.version) meta.append(element("span", metadata.version, "library-tag"));
     if (script.pendingUpdate) meta.append(element("span", "Update available", "script-update"));
     if (metadata?.tags.length) {
       const tags = element("span", undefined, "script-tags");
@@ -442,10 +445,12 @@ function render() {
 }
 
 function populateSetup() {
-  setupTags.value = "";
+  setupTags.value = setupNamespace.value = setupVersion.value = "";
   try {
     const metadata = parseSource(source.value);
     setupTags.value = metadata.tags.join(", ");
+    setupNamespace.value = metadata.namespace;
+    setupVersion.value = metadata.version;
     setupName.value = metadata.name;
     setupSites.value = metadata.matches.join("\n");
   } catch {
@@ -587,7 +592,9 @@ applySetup.addEventListener("click", () => {
   try {
     const patterns = setupSites.value.split("\n").map(line => line.trim()).filter(Boolean);
     const tags = setupTags.value.split(/[\s,]+/).filter(Boolean);
-    const next = updateTargets(source.value, setupName.value, patterns, tags);
+    const next = updateTargets(source.value, setupName.value, patterns, tags, {
+      namespace: setupNamespace.value, version: setupVersion.value
+    });
     parseSource(next + "\n;");
     source.replace(next);
     setup.open = false;
@@ -654,7 +661,7 @@ form.addEventListener("submit", event => {
   event.preventDefault();
   perform(async () => {
     const original = scripts.find(item => item.id === selectedId);
-    if (original && readRecipe(original.source) && original.source !== source.value &&
+    if (original && readRecipe(original.source) && !readRecipe(source.value) && original.source !== source.value &&
         !confirm("Save these JavaScript edits as a standalone script? This removes the visual recipe from this version.")) return;
     const { name, origins } = validate(source.value);
     const script = {

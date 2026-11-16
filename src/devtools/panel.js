@@ -3,8 +3,9 @@
 import { highlight } from "../guide/render.js";
 import { $ } from "../shared/dom.js";
 import { readScripts } from "../shared/storage.js";
-import { parseSource } from "../shared/userscript.js";
-import { actions, compile, createRunner, defaultAction, describeStep, generateRecipe, recipeRevision, readRecipe, stepLabel, stepProblem } from "./generator.js";
+import { allows, parseSource, runsOn, updateScriptIdentity } from "../shared/userscript.js";
+import { actions, appendVisualSteps, compile, createRunner, defaultAction, describeStep, generateRecipe, recipeRevision, readRecipe, separateVisualSteps, stepLabel, stepProblem } from "./generator.js";
+import { parseRecipeBackup, recipeBackup } from "./recipe-file.js";
 import { previewPage } from "./preview.js";
 import { probe } from "./probe.js";
 
@@ -21,6 +22,8 @@ const status = $("#status");
 const site = $("#site");
 const search = $("#search", HTMLInputElement);
 const name = $("#name", HTMLInputElement);
+const namespace = $("#recipe-namespace", HTMLInputElement);
+const scriptVersion = $("#recipe-version", HTMLInputElement);
 const preview = $("#preview");
 const summary = $("#summary");
 const code = $("#code", HTMLDetailsElement);
@@ -48,6 +51,17 @@ const resumeDraft = $("#resume-draft", HTMLButtonElement);
 const discardDraft = $("#discard-draft", HTMLButtonElement);
 const workspaceContent = $("main");
 
+const dryRun = $("#dry-run", HTMLButtonElement);
+const clearChecks = $("#clear-checks", HTMLButtonElement);
+const exportRecipe = $("#export-recipe", HTMLButtonElement);
+const recipeFile = $("#recipe-file", HTMLInputElement);
+const pageChecks = $("#page-checks");
+const recipeReview = $("#recipe-review", HTMLDialogElement);
+const reviewInfo = $("#recipe-review-info");
+let pendingImport;
+const checksByPage = new Map();
+let checkedRecipe = "";
+
 const kinds = {
   overlay: "Pinned bars and pop-ups", button: "Buttons", field: "Fields", link: "Links",
   heading: "Headings", media: "Images and media", section: "Page sections"
@@ -56,6 +70,7 @@ const blankRecipe = { version: 2, name: "Page customizations", page: "", scope: 
 const draftPrefix = "builderDraft:";
 
 let issueCursor = -1;
+let attached = false;
 let page = "";
 let draftPage = "";
 let scanVersion = 0;
@@ -287,6 +302,8 @@ function renderElements() {
 function recipe() {
   return {
     version: blankRecipe.version, name: name.value, page: draftPage, scope: scope.value, watch: watch.checked,
+    ...(namespace.value.trim() ? { namespace: namespace.value.trim() } : {}),
+    ...(scriptVersion.value.trim() ? { scriptVersion: scriptVersion.value.trim() } : {}),
     steps: steps.map(({ selector, text, label, action, values, all, expectedCount, tag, one, oneText, group, plain }) => ({
       selector, text, label, action, value: values[action], all, expectedCount, tag, one, oneText, group, plain
     }))
@@ -301,7 +318,8 @@ function renderCode() {
 code.addEventListener("toggle", renderCode);
 
 function showActualResults() {
-  const marker = current?.source.match(/^\/\/ Tailorscript recipe: (.+)$/m)?.[1];
+  const currentSource = current && separateVisualSteps(current.source);
+  const marker = (currentSource?.visual || currentSource?.base)?.match(/^\/\/ Tailorscript recipe: (.+)$/m)?.[1];
   const savedRun = current && runState?.[inspected.tabId]?.scripts?.[current.id]?.recipeRun;
   const sameRevision = marker && savedRun?.revision === recipeRevision(marker) && baseline === JSON.stringify(recipe());
   let position = 0;
@@ -314,17 +332,128 @@ function showActualResults() {
   });
 }
 
+function renderPageChecks() {
+  clearChecks.hidden = !checksByPage.size;
+  pageChecks.replaceChildren(...[...checksByPage.values()].reverse().map(({ address, inScope, entries }) => {
+    const list = make("ol", "", ...entries.map(({ step, result }) => {
+      const count = result.count === null ? "" : `${result.count} match(es) · `;
+      const outcome = inScope && result.applied ? `Would affect ${result.applied} · ${describeStep(step)}`
+        : result.message;
+      return make("li", "", count + outcome);
+    }));
+    return make("section", "page-check", make("strong", "", address),
+      make("p", "", inScope ? "In recipe scope" : "Outside recipe scope · target counts only"), list);
+  }));
+}
+
+dryRun.addEventListener("click", async () => {
+  const draft = recipe();
+  const snapshot = JSON.stringify(draft);
+  const usable = draft.steps.filter(step => !stepProblem(step));
+  try {
+    const payload = usable.map(({ selector, text, expectedCount, tag, all }) => ({ selector, text, expectedCount, tag, all }));
+    const { url, results } = await inspect("check-recipe", JSON.stringify(payload));
+    if (snapshot !== JSON.stringify(recipe())) return;
+    const address = new URL(url);
+    const target = new URL(draft.page);
+    const inScope = address.origin === target.origin && (draft.scope !== "path" || address.pathname === target.pathname) &&
+      (!attached || runsOn(current.source, address));
+    const key = address.origin + address.pathname + address.search;
+    checksByPage.delete(key);
+    checksByPage.set(key, { address: key, inScope, entries: usable.map((step, index) => ({ step, result: results[index] })) });
+    if (checksByPage.size > 10) checksByPage.delete(checksByPage.keys().next().value);
+    renderPageChecks();
+    say("Dry run complete. The page was not changed.", "success");
+  } catch (error) {
+    report(error);
+  }
+});
+
+clearChecks.addEventListener("click", () => {
+  checksByPage.clear();
+  renderPageChecks();
+  dryRun.focus();
+});
+
+exportRecipe.addEventListener("click", () => {
+  try {
+    const blob = new Blob([recipeBackup(recipe())], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = (name.value.trim().replace(/[^a-z0-9_-]+/gi, "-") || "tailorscript") + ".recipe.json";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (error) {
+    report(error);
+  }
+});
+
+$("#import-recipe").addEventListener("click", () => recipeFile.click());
+recipeFile.addEventListener("change", async () => {
+  const [file] = recipeFile.files;
+  recipeFile.value = "";
+  if (!file) return;
+  try {
+    if (file.size > 1024 * 1024) throw new Error("Choose a visual recipe backup under 1 MB.");
+    pendingImport = parseRecipeBackup(await file.text());
+    const target = new URL(pendingImport.page);
+    reviewInfo.textContent = [pendingImport.name || "Untitled recipe",
+      pendingImport.namespace && `Namespace ${pendingImport.namespace}`,
+      pendingImport.scriptVersion && `Version ${pendingImport.scriptVersion}`,
+      pendingImport.scope === "path" ? target.href : `${target.origin}/*`,
+      `${pendingImport.steps.length} step(s)`].filter(Boolean).join(" · ");
+    recipeReview.showModal();
+  } catch (error) {
+    report(error);
+  }
+});
+
+$("#load-recipe-file").addEventListener("click", async () => {
+  if (!pendingImport || pendingDraft || saving ||
+      (baseline !== JSON.stringify(recipe()) && !confirm("Replace this unsaved draft?"))) return;
+  storeDraft(recipe(), false);
+  await stopPicking().catch(() => {});
+  await stopPreview().catch(() => {});
+  load(undefined, pendingImport);
+  saved.value = "";
+  recipeReview.close();
+  say("Recipe opened as a new draft. Saving keeps it off until you enable it.", "success");
+});
+recipeReview.addEventListener("close", () => { pendingImport = undefined; });
+
 function refreshPreview() {
   const data = recipe();
+  const signature = JSON.stringify(data);
+  if (checkedRecipe !== signature) {
+    checkedRecipe = signature;
+    checksByPage.clear();
+    renderPageChecks();
+  }
   const usable = data.steps.filter(step => !stepProblem(step));
   const available = usable.length > 0 && Boolean(draftPage) && steps.every(step => step.valid);
   previewMessage.textContent = steps.some(step => !step.valid) ? "Fix the selectors marked above to see the code."
     : !available ? "Add a step to see the code." : usable.length < steps.length ? "Unfinished steps are left out." : "";
-  generated = available ? generateRecipe(data) : "";
-  copy.disabled = test.disabled = !available;
+  const attachment = attached && current ? separateVisualSteps(current.source) : null;
+  const needsMenuGrant = attachment && usable.some(step => step.action === "menu") &&
+    !allows(parseSource(attachment.base).grants, "menu");
+  if (needsMenuGrant) previewMessage.textContent = "Add @grant GM_registerMenuCommand in the manager to save a Popup button step.";
+  const base = attachment && updateScriptIdentity(attachment.base, {
+    namespace: data.namespace ?? "", version: data.scriptVersion ?? ""
+  });
+  const visual = available && !needsMenuGrant ? generateRecipe(attachment
+    ? { ...data, namespace: undefined, scriptVersion: undefined } : data) : "";
+  generated = attachment ? appendVisualSteps(base, visual) : visual;
+  const removingAttachment = attachment?.visual && !steps.length;
+  dryRun.disabled = !available;
+  exportRecipe.disabled = !available || data.steps.length > 100;
+  copy.disabled = !generated || (!available && !removingAttachment);
+  test.disabled = !available || Boolean(needsMenuGrant);
   const dirty = baseline !== JSON.stringify(data);
   storeDraft(data, dirty);
-  save.disabled = !available || saving || !dirty || Boolean(pendingDraft);
+  const identityOnly = attachment && base !== attachment.base && !steps.length;
+  save.disabled = !(available || removingAttachment || identityOnly) || Boolean(needsMenuGrant) || saving || !dirty || Boolean(pendingDraft);
+  name.disabled = attached;
   draftState.textContent = saving ? "Saving…" : dirty ? "Unsaved changes" : current ? "Saved" : "";
   stepCount.textContent = steps.length ? `(${steps.length})` : "";
   enabledLabel.hidden = openManager.hidden = !current;
@@ -731,7 +860,7 @@ for (const tab of document.querySelectorAll(".views button")) {
 }
 
 search.addEventListener("input", renderElements);
-name.addEventListener("input", refreshPreview);
+for (const input of [name, namespace, scriptVersion]) input.addEventListener("input", refreshPreview);
 scope.addEventListener("change", refreshPreview);
 watch.addEventListener("change", refreshPreview);
 
@@ -768,7 +897,7 @@ async function scanPage() {
   }
 }
 
-scan.addEventListener("click", scanPage);
+scan.addEventListener("click", () => scanPage().then(refreshLibrary).catch(report));
 selected.addEventListener("click", () => {
   inspect("describe", "typeof $0 === \"undefined\" ? null : $0").then(item => {
     if (item) add(item);
@@ -784,11 +913,22 @@ copy.addEventListener("click", () => {
 
 async function refreshLibrary() {
   const scripts = await readScripts();
-  library = scripts.filter(item => readRecipe(item.source));
+  const url = page ? new URL(page) : null;
+  const recipes = scripts.filter(item => readRecipe(item.source));
+  const existing = scripts.filter(item => !recipes.includes(item) && !separateVisualSteps(item.source).visual &&
+    (item.id === current?.id || (url && runsOn(item.source, url))));
+  library = [...recipes, ...existing];
   // A change made elsewhere, such as turning the script on, must not look like a conflicting edit when saving.
   const fresh = current && scripts.find(item => item.id === current.id);
   if (fresh && fresh.source === current.source) current = fresh;
-  saved.replaceChildren(new Option("New recipe", ""), ...library.map(item => new Option(item.name, item.id)));
+  const groups = { "Visual recipes": recipes, "Scripts for this page": existing };
+  saved.replaceChildren(new Option("New recipe", ""), ...Object.entries(groups).flatMap(([label, entries]) => {
+    if (!entries.length) return [];
+    const group = document.createElement("optgroup");
+    group.label = label;
+    group.append(...entries.map(item => new Option(item.name, item.id)));
+    return [group];
+  }));
   saved.value = current?.id ?? "";
   enabled.checked = Boolean(current?.enabled);
 }
@@ -796,17 +936,28 @@ async function refreshLibrary() {
 function load(script, recovered) {
   const stored = script && readRecipe(script.source);
   const data = recovered ?? stored;
+  attached = Boolean(script && (!stored || separateVisualSteps(script.source).visual));
   current = script;
   draftPage = data?.page ?? "";
-  name.value = data?.name ?? blankRecipe.name;
+  name.value = attached ? script.name : data?.name ?? blankRecipe.name;
+  const identity = attached ? parseSource(script.source) : null;
+  namespace.value = recovered ? recovered.namespace ?? "" : identity?.namespace ?? data?.namespace ?? "";
+  scriptVersion.value = recovered ? recovered.scriptVersion ?? "" : identity?.version ?? data?.scriptVersion ?? "";
   scope.value = data?.scope ?? blankRecipe.scope;
   watch.checked = data?.watch ?? false;
   steps.splice(0, steps.length, ...(data?.steps ?? []).map(step => ({
     ...step, values: { [step.action]: step.value }, valid: validSelector(step.selector)
   })));
   // An upgraded recipe from the first builder counts as unsaved, so Save writes it in the current format.
-  baseline = recovered ? JSON.stringify(stored ?? blankRecipe) : stored?.upgraded ? "" : JSON.stringify(recipe());
+  baseline = recovered ? JSON.stringify({
+    ...(stored ?? { ...blankRecipe, name: script?.name ?? blankRecipe.name }),
+    ...(identity?.namespace ? { namespace: identity.namespace } : {}),
+    ...(identity?.version ? { scriptVersion: identity.version } : {})
+  }) : stored?.upgraded ? "" : JSON.stringify(recipe());
   renderSteps();
+  if (attached && !stored && !recovered) {
+    say("Add visual steps to this script. They run after its existing JavaScript.");
+  }
   if (!recovered && stored?.upgraded) {
     say("This recipe was made with an earlier version of the builder. Save it to update it; " +
       "any changes made to its code by hand will be replaced.", "info");
@@ -925,7 +1076,7 @@ undo.addEventListener("click", () => stopPreview().then(() => say("Test undone."
 chrome.devtools.network.onNavigated.addListener(() => {
   stopPicking().catch(() => {});
   stopPreview().catch(() => {});
-  scanPage().then(offerDraft).catch(report);
+  scanPage().then(refreshLibrary).then(offerDraft).catch(report);
 });
 window.addEventListener("builder-hidden", () => {
   clearDrag();
@@ -944,7 +1095,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 load(undefined);
 refreshLibrary().catch(report);
-scanPage().then(offerDraft).catch(report);
+scanPage().then(refreshLibrary).then(offerDraft).catch(report);
 chrome.storage.session.get("tabRuns").then(({ tabRuns }) => {
   runState ??= tabRuns;
   showActualResults();
