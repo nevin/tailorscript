@@ -13,7 +13,7 @@
     "check": "node scripts/check.mjs",
     "vendor": "node scripts/vendor.mjs",
     "lint": "eslint .",
-    "test": "node --test --experimental-test-coverage --test-coverage-include=\"src/**\" --test-coverage-exclude=\"src/vendor/**\" --test-coverage-lines=80 --test-coverage-branches=80 --test-coverage-functions=85 \"tests/**/*.test.mjs\"",
+    "test": "node --test --experimental-test-coverage --test-coverage-include=\"src/**\" --test-coverage-exclude=\"src/vendor/**\" --test-coverage-exclude=\"src/background/userscript-runtime.js\" --test-coverage-exclude=\"src/background/bridge.js\" --test-coverage-exclude=\"src/devtools/locator.js\" --test-coverage-lines=80 --test-coverage-branches=80 --test-coverage-functions=85 \"tests/**/*.test.mjs\"",
     "verify": "npm run lint && npm run typecheck && npm test && npm run check",
     "package": "node scripts/package.mjs",
     "release": "npm run verify && npm run package",

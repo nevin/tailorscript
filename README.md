@@ -58,7 +58,7 @@ See [docs/architecture.md](docs/architecture.md) for how the pieces talk to each
 | `npm run vendor:check` | Fails if the committed CodeMirror bundle differs from a fresh build. |
 | `npm run lint` | Runs ESLint. |
 | `npm run typecheck` | Type-checks `src/` with TypeScript, using JSDoc types and `@types/chrome`. Nothing is compiled. |
-| `npm test` | Runs the unit and integration tests and fails below 80% line coverage of the modules they load. |
+| `npm test` | Runs the unit and integration tests and fails below 80% line coverage of the modules they load. Code that runs inside web pages (the userscript runtime, the page bridge and the element locator) is left out of that measure, since it runs from text in a sandbox or page; the end-to-end tests cover it. |
 | `npm run test:e2e` | Loads the built extension in Chrome for Testing and checks injection, the GM bridge, Run now, menu commands, the install redirect and the editor. Run `npx puppeteer browsers install chrome` once first. |
 | `npm run test:devtools` | Opens the visual builder in a real DevTools window. It needs a visible browser window; on Linux run it with `xvfb-run -a`. |
 | `npm run verify` | Lint, type check, tests and check together, as CI runs them. |
