@@ -1,3 +1,5 @@
+import { validate } from "../shared/validate.js";
+import { urlCheck } from "./url-check.js";
 // The manager's dialogs: version history, stored values, Trash, site access, settings and backup, import and export,
 // install from URL and diagnostics.
 import { $ } from "../shared/dom.js";
@@ -26,20 +28,45 @@ export function setupDialogs(app) {
 
   // Shows what an import will add or replace, with what changed in converting scripts from another manager.
   // entries come from import-formats.js; manager names where they came from.
-  function reviewImport(entries, origin, manager = "Tailorscript") {
+  function reviewImport(entries, origin, manager = "Tailorscript", previousChoices = [], keepEnabled) {
     const rows = element("ul", undefined, "import-list");
     const parsed = entries.map(entry => {
       try {
-        return { ...entry, meta: parseSource(entry.source) };
+        return { ...entry, meta: validate(entry.source) };
       } catch (error) {
         return { ...entry, error: error.message };
       }
     });
-    const choices = parsed.map(entry => {
+    const choices = parsed.map((entry, index) => {
       const item = element("li");
       if (entry.error) {
         item.append(element("strong", headerValues(entry.source, "name")[0] || "Unnamed script"),
           element("span", `Can’t be imported: ${entry.error}`, "import-note warning-item"));
+        const repair = element("details", undefined, "import-repair");
+        const input = document.createElement("textarea");
+        input.rows = 7;
+        input.spellcheck = false;
+        input.value = entry.source;
+        input.setAttribute("aria-label", "Script source to repair");
+        const result = element("p");
+        result.setAttribute("role", "status");
+        repair.append(element("summary", "Repair script"), input, makeButton("Retry validation", () => {
+          try {
+            validate(input.value);
+            entries[index] = { ...entries[index], source: input.value };
+            reviewImport(entries, origin, manager, choices.map(choice => choice?.value), turnOn.checked);
+            review.querySelectorAll(".import-list > li")[index].querySelector("select")?.focus();
+          } catch (error) {
+            result.textContent = error.message;
+          }
+        }), result);
+        const invalid = entry.error.match(/^Invalid HTTP\(S\) match pattern: (.*)$/)?.[1];
+        if (invalid) {
+          const line = entry.source.split("\n").findIndex(text =>
+            /^\s*\/\/\s*@(?:exclude-)?match\s+/.test(text) && text.trimEnd().endsWith(invalid));
+          if (line >= 0) item.append(element("pre", `Line ${line + 1}: ${entry.source.split("\n")[line].trim()}`, "import-invalid-line"));
+        }
+        item.append(repair);
         rows.append(item);
         return null;
       }
@@ -50,7 +77,8 @@ export function setupDialogs(app) {
       choice.append(new Option("Add as a new script", "new"));
       if (!identical && sameName) choice.append(new Option(`Replace “${sameName.name}”`, sameName.id));
       choice.append(new Option("Skip", "skip"));
-      choice.value = identical ? "skip" : "new";
+      choice.value = [...choice.options].some(option => option.value === previousChoices[index])
+        ? previousChoices[index] : identical ? "skip" : "new";
       choice.setAttribute("aria-label", `Import action for ${meta.name}`);
       const sites = [...meta.matches, ...meta.includes];
       const notes = [...(entry.notes ?? [])];
@@ -65,14 +93,16 @@ export function setupDialogs(app) {
           ? `; excludes ${[...meta.excludeMatches, ...meta.excludes].join(", ")}` : ""}`),
         element("span", identical ? "Identical to a script in your library." : sameName ? "A script with this name already exists." : "", "import-note"));
       if (notes.length) item.append(bulletList(notes.map(text => ({ text, warning: text.startsWith("Uses ") }))));
-      item.append(choice);
+      const check = element("details", undefined, "import-repair");
+      check.append(element("summary", "Test URL"), urlCheck(() => entry.source));
+      item.append(choice, check);
       rows.append(item);
       return choice;
     });
     const runnable = parsed.filter(entry => !entry.error && entry.wasEnabled);
     const turnOn = document.createElement("input");
     turnOn.type = "checkbox";
-    turnOn.checked = runnable.length > 0;
+    turnOn.checked = keepEnabled ?? runnable.length > 0;
     const turnOnLabel = element("label", undefined, "import-turn-on");
     turnOnLabel.append(turnOn, ` Turn on the ${runnable.length === 1 ? "script" : `${runnable.length} scripts`} that ${runnable.length === 1 ? "was" : "were"} on in ${manager}. Chrome asks to allow ${runnable.length === 1 ? "its" : "their"} sites.`);
     const intro = element("p", runnable.length ? "Other imported scripts start off, so you can review them first."

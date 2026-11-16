@@ -239,16 +239,18 @@ test("visual recipe can be previewed, saved, reopened and applied after reload",
     const result = await session.send("Runtime.evaluate", { expression, returnByValue: true });
     return { value: result.result.value, error: Boolean(result.exceptionDetails) };
   });
-  await panel.evaluateOnNewDocument(() => {
+  const tabId = await manager.evaluate(async url => (await chrome.tabs.query({ url })).at(-1).id, page.url());
+  await panel.evaluateOnNewDocument(tabId => {
     chrome.devtools = {
       inspectedWindow: {
+        tabId,
         eval(expression, callback) {
           globalThis.inspectFixture(expression).then(({ value, error }) => callback(value, error));
         }
       },
       network: { onNavigated: { addListener() {} } }
     };
-  });
+  }, tabId);
   try {
     await panel.goto(`chrome-extension://${extensionId}/devtools/panel.html`);
     await panel.type("#search", "Test page");
@@ -309,6 +311,7 @@ test("visual recipe can be previewed, saved, reopened and applied after reload",
     await send({ type: "toggle", id, enabled: true });
     await page.reload();
     await page.waitForFunction(() => getComputedStyle(document.querySelector("h1")).fontSize === "18px");
+    await panel.waitForFunction(() => document.querySelector(".actual-result").textContent.includes("Last run · Changed 1"));
   } finally {
     await panel.close();
     await page.close();
@@ -530,5 +533,31 @@ test("manager dashboard counts scripts and clears filters", async () => {
     assert.equal(await dashboard.$eval("#group-scripts", select => select.value), "tag");
   } finally {
     await dashboard.close();
+  }
+});
+
+
+test("import repair keeps valid scripts and explains URL rules before import", async () => {
+  const page = await browser.newPage();
+  const file = path.join(extensionDir, "repair-backup.json");
+  const broken = header("Repair me", ["match https://example.net:bad/*", "exclude-match https://example.net/private/*"]) + "void 0;";
+  const good = header("Valid alongside", ["match https://example.org/*"]) + "void 0;";
+  await writeFile(file, JSON.stringify({ version: 1, scripts: [{ source: broken }, { source: good }] }));
+  try {
+    await page.goto(`chrome-extension://${extensionId}/manager/index.html`);
+    await (await page.$("#import-file")).uploadFile(file);
+    await page.waitForSelector(".import-invalid-line");
+    assert.match(await page.$eval(".import-invalid-line", element => element.textContent), /Line 3:.*:bad/);
+    await page.click(".import-repair summary");
+    await page.$eval(".import-repair textarea", input => { input.value = input.value.replace(":bad", ""); });
+    await page.click(".import-repair button");
+    await page.waitForSelector('.import-list select[aria-label="Import action for Repair me"]');
+    await page.click(".import-list li:first-child summary");
+    await page.type(".import-list li:first-child input[type=url]", "https://example.net/private/index");
+    await page.waitForFunction(() => document.querySelector(".url-check [role=status]").textContent.includes("Excluded by @exclude-match"));
+    await page.evaluate(() => [...document.querySelectorAll("#review-content button")].find(button => button.textContent === "Import selected").click());
+    await page.waitForFunction(() => document.querySelector("#status").textContent.includes("Imported 2 scripts"));
+  } finally {
+    await page.close();
   }
 });

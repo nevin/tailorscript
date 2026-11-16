@@ -6,7 +6,7 @@ import { collectDiagnostics } from "./diagnostics.js";
 import { enablePending, handlers, preparers, purgeExpired, reconcile } from "./library.js";
 import { enqueue, ignore } from "./queue.js";
 import {
-  abortRequest, notificationClicked, notificationClosed, recordMenu, recordRun, scriptHandlers, tabLoading, tabRemoved
+  abortRequest, notificationClicked, notificationClosed, recordMenu, recordRecipeRun, recordRun, scriptHandlers, tabLoading, tabRemoved
 } from "./script-bridge.js";
 import { openManager, runMenuCommand, runNow } from "./tab-actions.js";
 import { checkUpdates, scheduleUpdates } from "./update-check.js";
@@ -95,6 +95,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
 // Reports a script sends without waiting for an answer.
 const scriptReports = {
   run: recordRun,
+  "recipe-run": recordRecipeRun,
   error: recordRun,
   menu: recordMenu,
   "xhr-abort": (id, { requestId }) => abortRequest(requestId)

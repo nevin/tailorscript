@@ -139,3 +139,6 @@ main > section { min-width: 0; min-height: 0; overflow: auto; padding: var(--spa
   main[data-view="elements"] #workspace, main[data-view="recipe"] #element-pane { display: none; }
   #element-pane { border-right: 0; }
 }
+
+.actual-result:empty { display: none; }
+.actual-result { color: var(--muted); font-size: .85rem; }

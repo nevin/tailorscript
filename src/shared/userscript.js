@@ -280,6 +280,23 @@ export function targetsMatch(targets, url) {
     guardAllows(targets.guard, href);
 }
 
+export function explainMatch(metadata, url) {
+  const href = url.href.replace(/#.*$/, "");
+  const ruleMatches = pattern => {
+    const rule = parseRule(pattern);
+    return rule.regex ? new RegExp(rule.regex.source, rule.regex.flags).test(href) : globMatches(rule.glob, href);
+  };
+  const matched = metadata.matches.find(pattern => matchesUrl(pattern, url));
+  const include = !matched && metadata.includes.find(ruleMatches);
+  const included = matched ? `@match ${matched}` : include && `@include ${include}`;
+  if (!included) return "No inclusion rule matches this URL. Check the scheme, hostname, port, and path.";
+  const excluded = metadata.excludeMatches.find(pattern => matchesUrl(pattern, url));
+  const exclusion = excluded ? `@exclude-match ${excluded}`
+    : metadata.excludes.filter(ruleMatches).map(pattern => `@exclude ${pattern}`)[0];
+  if (exclusion) return `Excluded by ${exclusion}. Also matches ${included}.`;
+  return targetsMatch(metadata.targets, url) ? `Matches ${included}.` : "The registered URL rules do not match this page.";
+}
+
 export function runsOn(source, url) {
   try {
     return targetsMatch(parseSource(source).targets, url);

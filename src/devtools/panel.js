@@ -4,7 +4,7 @@ import { highlight } from "../guide/render.js";
 import { $ } from "../shared/dom.js";
 import { readScripts } from "../shared/storage.js";
 import { parseSource } from "../shared/userscript.js";
-import { actions, compile, createRunner, defaultAction, describeStep, generateRecipe, readRecipe, stepLabel, stepProblem } from "./generator.js";
+import { actions, compile, createRunner, defaultAction, describeStep, generateRecipe, recipeRevision, readRecipe, stepLabel, stepProblem } from "./generator.js";
 import { previewPage } from "./preview.js";
 import { probe } from "./probe.js";
 
@@ -69,6 +69,8 @@ let diagnosticVersion = 0;
 let diagnosticTimer;
 const stepMessages = [];
 const stepResults = [];
+const actualResults = [];
+let runState;
 let current;
 let library = [];
 let baseline = "";
@@ -298,6 +300,20 @@ function renderCode() {
 }
 code.addEventListener("toggle", renderCode);
 
+function showActualResults() {
+  const marker = current?.source.match(/^\/\/ Tailorscript recipe: (.+)$/m)?.[1];
+  const savedRun = current && runState?.[inspected.tabId]?.scripts?.[current.id]?.recipeRun;
+  const sameRevision = marker && savedRun?.revision === recipeRevision(marker) && baseline === JSON.stringify(recipe());
+  let position = 0;
+  actualResults.forEach(({ actual, repair }, index) => {
+    const step = steps[index];
+    const usable = !stepProblem({ action: step.action, value: step.values[step.action] });
+    const outcome = sameRevision && usable ? savedRun.outcomes[position++] : "";
+    actual.textContent = outcome ? `Last run · ${outcome}` : "";
+    repair.hidden = !outcome?.startsWith("Skipped");
+  });
+}
+
 function refreshPreview() {
   const data = recipe();
   const usable = data.steps.filter(step => !stepProblem(step));
@@ -322,6 +338,7 @@ function refreshPreview() {
   for (const result of stepResults) result.textContent = "";
   renderCode();
   diagnoseSteps();
+  showActualResults();
 }
 
 function updateStepSummary() {
@@ -476,6 +493,10 @@ function renderStep(step, index) {
   const result = make("p", "test-result");
   result.setAttribute("role", "status");
   stepResults.push(result);
+  const actual = make("p", "actual-result");
+  const repair = button("Pick replacement", () => pickReplacement(step).catch(report));
+  repair.hidden = true;
+  actualResults.push({ actual, repair });
   const problem = make("p", "step-problem", stepProblem({ action: step.action, value: step.values[step.action] }));
 
   const handle = make("span", "handle", "⠿");
@@ -626,6 +647,7 @@ function renderStep(step, index) {
 
   row.append(head, action, problem, target, result, advanced);
   row.addEventListener("mouseenter", () => { if (step.valid) highlightSoon(step); });
+  row.append(actual, repair);
   row.addEventListener("mouseleave", () => highlightSoon(null));
   return row;
 }
@@ -634,6 +656,7 @@ function renderSteps() {
   issueCursor = -1;
   stepMessages.length = 0;
   stepResults.length = 0;
+  actualResults.length = 0;
   stepsList.replaceChildren(...steps.map(renderStep));
   refreshPreview();
 }
@@ -911,6 +934,10 @@ window.addEventListener("builder-hidden", () => {
   inspect("highlight").catch(() => {});
 });
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "session" && changes.tabRuns) {
+    runState = changes.tabRuns.newValue;
+    showActualResults();
+  }
   if (area === "local" && !saving && Object.keys(changes).some(key => !key.startsWith(draftPrefix))) {
     refreshLibrary().catch(report);
   }
@@ -918,3 +945,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 load(undefined);
 refreshLibrary().catch(report);
 scanPage().then(offerDraft).catch(report);
+chrome.storage.session.get("tabRuns").then(({ tabRuns }) => {
+  runState ??= tabRuns;
+  showActualResults();
+}).catch(report);

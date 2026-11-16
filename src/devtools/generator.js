@@ -155,7 +155,16 @@ export function createRunner(steps, preview = false) {
   } };
 }
 
-export function generateRecipe(recipe) {
+// Identify the saved revision without sending source or selector text to the worker.
+export function recipeRevision(marker) {
+  let hash = 2166136261;
+  for (let index = 0; index < marker.length; index++) {
+    hash = Math.imul(hash ^ marker.charCodeAt(index), 16777619);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+export function generateRecipe(recipe, { reportRuns = true } = {}) {
   const { name, page, scope, watch, steps } = recipe;
   const url = new URL(page);
   if (!["http:", "https:"].includes(url.protocol)) throw new Error("Open an HTTP or HTTPS page first.");
@@ -168,7 +177,7 @@ export function generateRecipe(recipe) {
   const compiled = compile(usable);
   const menus = compiled.flatMap((step, index) => "menu" in step ? [[index, step.menu]] : []);
   const keys = compiled.some(step => "key" in step);
-  const canonical = { version: 2, name: title, page: url.origin + url.pathname, scope, watch, steps };
+  const canonical = { version: 2, name: title, page: url.origin + url.pathname, scope, watch, steps, ...(reportRuns ? { reportRuns: true } : {}) };
   const data = JSON.stringify(compiled, null, 2).replace(/\n/g, "\n  ");
   const marker = JSON.stringify(canonical).replace(/[\u2028\u2029]/g, char => char === "\u2028" ? "\\u2028" : "\\u2029");
   return `// ==UserScript==
@@ -187,9 +196,17 @@ export function generateRecipe(recipe) {
   const createRunner = ${createRunner.toString()};
   const runner = createRunner(steps);
   const inScope = () => ${guards.join(" && ")};
+${reportRuns ? `  let previous = [];
   function apply() {
+    if (!inScope()) return;
+    const results = runner.run().slice(0, 100).map((result, index) =>
+      result.startsWith("Changed 0 ") && previous[index]?.startsWith("Changed ") ? previous[index] : result);
+    if (results.every((result, index) => result === previous[index]) && results.length === previous.length) return;
+    previous = results;
+    globalThis[Symbol.for("tailorscript.recipeRun")]?.(${JSON.stringify(recipeRevision(marker))}, results);
+  }` : `  function apply() {
     if (inScope()) runner.run();
-  }
+  }`}
 
   apply();${keys ? `
   runner.listen();` : ""}${menus.map(([index, caption]) => `
@@ -225,7 +242,9 @@ export function readRecipe(source) {
       };
     }
     if (recipe?.version !== 2) return null;
-    return generateRecipe(recipe) === source ? recipe : null;
+    const { reportRuns, ...data } = recipe;
+    if (generateRecipe(data, { reportRuns: Boolean(reportRuns) }) !== source) return null;
+    return reportRuns ? data : { ...data, upgraded: true };
   } catch {
     return null;
   }

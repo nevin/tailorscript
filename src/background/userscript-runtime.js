@@ -82,6 +82,10 @@ export function installRuntime(config) {
   // crypto.randomUUID only exists on HTTPS pages, and scripts also run on plain HTTP.
   let counter = 0;
   const uniqueId = () => `${Date.now().toString(36)}-${++counter}-${Math.random().toString(36).slice(2)}`;
+  Object.defineProperty(globalThis, Symbol.for("tailorscript.recipeRun"), {
+    configurable: true,
+    value: (revision, results) => report({ type: "recipe-run", revision, results })
+  });
   report({ type: "run" });
   addEventListener("error", event => report({ type: "error", message: event.message, line: event.lineno, column: event.colno }));
   addEventListener("unhandledrejection", event => report({ type: "error", message: String(event.reason?.message ?? event.reason) }));

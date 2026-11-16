@@ -77,7 +77,7 @@
 
 /**
  * @typedef {object} TabState Scripts that ran in a tab's current document, and their menu commands.
- * @property {Record<string, { at?: number, url?: string, error?: RunError }>} scripts
+ * @property {Record<string, { at?: number, url?: string, error?: RunError, recipeRun?: { revision: string, outcomes: string[], at: number } }>} scripts
  * @property {Record<string, { commandId: string, caption: string, frameId: number, documentId?: string }[]>} menus
  * @property {number} startedAt
  * @property {string} [documentId]

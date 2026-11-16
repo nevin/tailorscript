@@ -34,6 +34,7 @@ export const pageMessages = {
 // which the service worker checks first (background/bridge-token.js).
 export const scriptMessages = {
   run: {},
+  "recipe-run": { revision: "string", results: "array" },
   error: { message: "string?", line: "number?", column: "number?" },
   menu: { op: "string", commandId: "string", caption: "string?" },
   "xhr-abort": { requestId: "string" },

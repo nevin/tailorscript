@@ -43,6 +43,19 @@ export function recordRun(id, message, sender) {
   });
 }
 
+export function recordRecipeRun(id, { revision, results }, sender) {
+  const tabId = sender.tab?.id;
+  if (tabId === undefined || sender.frameId !== 0 || !/^[a-f0-9]{1,8}$/.test(revision)) return;
+  const outcomes = results.slice(0, 100).map(result => typeof result === "string" ? result.slice(0, 240) : "");
+  enqueueRun(async () => {
+    const { tabRuns = {} } = await getSession("tabRuns");
+    const tab = tabRuns[tabId];
+    if (!tab?.scripts[id] || tab.documentId !== sender.documentId || !tab.startedAt) return;
+    tab.scripts[id].recipeRun = { revision, outcomes, at: Date.now() };
+    await chrome.storage.session.set({ tabRuns });
+  });
+}
+
 export function recordMenu(id, { op, commandId, caption }, sender) {
   const tabId = sender.tab?.id;
   if (tabId === undefined) return;

@@ -1,3 +1,4 @@
+import { urlCheck } from "./url-check.js";
 import { readRecipe } from "../devtools/generator.js";
 import { $ } from "../shared/dom.js";
 import { timeAgo } from "../shared/format.js";
@@ -148,6 +149,11 @@ const source = createCodeEditor($("#editor"), {
   onDiagnostics: renderProblems
 });
 validation.addEventListener("click", () => source.openProblems());
+$("#editor-test-url", HTMLButtonElement).addEventListener("click", () => {
+  const check = urlCheck(() => source.value, diagnosticUrl.value);
+  openReview("Test script URL", check);
+  check.querySelector("input").focus();
+});
 $("#editor-validate", HTMLButtonElement).addEventListener("click", () => {
   try {
     validate(source.value);
