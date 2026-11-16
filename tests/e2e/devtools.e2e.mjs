@@ -7,6 +7,7 @@ import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { after, before, test } from "node:test";
 import puppeteer from "puppeteer";
 import { build } from "../../scripts/build.mjs";
@@ -95,6 +96,13 @@ test("the builder runs as a DevTools tab with the page's real selection", async 
   await panel.$eval("#selected", button => button.click());
   await panel.waitForSelector("#steps .step", { timeout: 5000, polling: 100 });
   assert.match(await panel.$eval("#steps .step strong", node => node.textContent), /Autumn sale/);
+
+  // With elements listed and a step added, check the panel's controls for accessibility problems.
+  await panel.evaluate(await readFile(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8"));
+  const violations = await panel.evaluate(async () => (await globalThis.axe.run(document, {
+    runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"] }
+  })).violations.map(({ id, help, nodes }) => `${id}: ${help} (${nodes.slice(0, 3).map(node => node.target.join(" ")).join(", ")})`));
+  assert.deepEqual(violations, []);
   await panel.$eval("#test", button => button.click());
   await panel.waitForFunction(() => document.querySelector(".test-result")?.textContent.includes("Changed 1"), { timeout: 5000, polling: 100 });
   assert.equal(await page.$eval("h1", node => getComputedStyle(node).display), "none");

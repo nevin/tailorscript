@@ -138,7 +138,9 @@ export const handlers = {
       // Values carried over from another manager, within the same 1 MB a script can store here.
       if (values && JSON.stringify(values).length <= 1024 * 1024) extra[`values:${id}`] = values;
     });
-    return commit(scripts, extra);
+    // Scripts whose @require or @resource files couldn't be downloaded, so the manager can say so straight away.
+    const failedDownloads = entries.flatMap(({ source }, position) => deps[position]?.error ? [parseSource(source).name] : []);
+    return { ...await commit(scripts, extra), failedDownloads };
   },
 
   async save(message, scripts, index, current, { deps }) {

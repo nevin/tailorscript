@@ -27,8 +27,8 @@ export function setupDialogs(app) {
   }
 
   // Shows what an import will add or replace, with what changed in converting scripts from another manager.
-  // entries come from import-formats.js; manager names where they came from.
-  function reviewImport(entries, origin, manager = "Tailorscript", previousChoices = [], keepEnabled) {
+  // entries come from import-formats.js; manager names where they came from; skipped counts entries that weren't scripts.
+  function reviewImport(entries, origin, manager = "Tailorscript", previousChoices = [], keepEnabled, skipped = 0) {
     const rows = element("ul", undefined, "import-list");
     const parsed = entries.map(entry => {
       try {
@@ -54,7 +54,7 @@ export function setupDialogs(app) {
           try {
             validate(input.value);
             entries[index] = { ...entries[index], source: input.value };
-            reviewImport(entries, origin, manager, choices.map(choice => choice?.value), turnOn.checked);
+            reviewImport(entries, origin, manager, choices.map(choice => choice?.value), turnOn.checked, skipped);
             review.querySelectorAll(".import-list > li")[index].querySelector("select")?.focus();
           } catch (error) {
             result.textContent = error.message;
@@ -107,8 +107,9 @@ export function setupDialogs(app) {
     turnOn.checked = keepEnabled ?? runnable.length > 0;
     const turnOnLabel = element("label", undefined, "import-turn-on");
     turnOnLabel.append(turnOn, ` Turn on the ${runnable.length === 1 ? "script" : `${runnable.length} scripts`} that ${runnable.length === 1 ? "was" : "were"} on in ${manager}. Chrome asks to allow ${runnable.length === 1 ? "its" : "their"} sites.`);
-    const intro = element("p", runnable.length ? "Other imported scripts start off, so you can review them first."
-      : "Imported scripts start off so you can review them first.");
+    const intro = element("p", (runnable.length ? "Other imported scripts start off, so you can review them first."
+      : "Imported scripts start off so you can review them first.") +
+      (skipped ? ` ${skipped} ${skipped === 1 ? "entry" : "entries"} in the file ${skipped === 1 ? "wasn’t a script" : "weren’t scripts"} and ${skipped === 1 ? "was" : "were"} left out.` : ""));
     openReview(`Review import from ${origin}`, intro, ...(runnable.length ? [turnOnLabel] : []), rows,
       Object.assign(makeButton("Import selected", () => {
         const chosen = parsed.flatMap((entry, index) => {
@@ -126,7 +127,7 @@ export function setupDialogs(app) {
         const access = origins.length ? chrome.permissions.request({ origins }) : Promise.resolve(true);
         app.perform(async () => {
           if (!await access) for (const entry of chosen) entry.enabled = false;
-          await app.send({ type: "import", entries: chosen });
+          const { failedDownloads = [] } = await app.send({ type: "import", entries: chosen });
           await app.reloadData();
           const replacedSelected = chosen.some(entry => entry.replace === app.selectedId);
           if (replacedSelected && !app.isDirty()) app.select(app.scripts.find(item => item.id === app.selectedId));
@@ -134,7 +135,9 @@ export function setupDialogs(app) {
           app.status.textContent = `Imported ${chosen.length} ${chosen.length === 1 ? "script" : "scripts"}` +
             (on ? `, ${on} turned on. Reload pages to run ${on === 1 ? "it" : "them"}.` : ", turned off for review.") +
             (origins.length && !on ? " Site access was declined, so nothing was turned on." : "") +
-            (replacedSelected && app.isDirty() ? " The open script was replaced; reload it before saving." : "");
+            (replacedSelected && app.isDirty() ? " The open script was replaced; reload it before saving." : "") +
+            (failedDownloads.length ? ` The libraries for ${failedDownloads.map(name => `“${name}”`).join(", ")} couldn’t be downloaded, ` +
+              `so ${failedDownloads.length === 1 ? "it won’t run until you open it and save" : "they won’t run until you open each one and save"} to try again.` : "");
         });
       }), { className: "primary" }));
   }
@@ -363,8 +366,8 @@ export function setupDialogs(app) {
     importFile.value = "";
     if (!file) return;
     app.perform(async () => {
-      const { manager, entries } = await decodeImportFile(file.name, new Uint8Array(await file.arrayBuffer()));
-      reviewImport(entries, file.name, manager);
+      const { manager, entries, skipped } = await decodeImportFile(file.name, new Uint8Array(await file.arrayBuffer()));
+      reviewImport(entries, file.name, manager, [], undefined, skipped);
     });
   });
   $("#history", HTMLButtonElement).addEventListener("click", showHistory);

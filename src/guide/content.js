@@ -44,7 +44,7 @@ GM_addStyle(\`
       "Each script has its own values. One script can't read another's.",
       "To see or clear what a script has saved, open the script's ⋯ menu in the manager and choose Stored values.",
       "`GM_getValues`, `GM_setValues` and `GM_deleteValues` work on several keys at once, for scripts written for Tampermonkey's newer versions.",
-      "`GM_addValueChangeListener` calls a function when the script changes a value on the same page. Changes made in other tabs aren't reported yet."
+      "`GM_addValueChangeListener` calls a function whenever the value changes, including from the same script in another tab, which lets tabs keep each other up to date. The last argument, `remote`, is true for changes from another tab."
     ]
   },
   {

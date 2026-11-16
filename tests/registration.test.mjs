@@ -155,7 +155,9 @@ test("the runtime provides GM_info, synchronous values, menus and resources", as
   assert.equal(context.GM_getValue("missing", "fallback"), "fallback");
   context.GM_setValue("count", 4);
   assert.equal(context.GM_getValue("count"), 4);
-  assert.deepEqual({ ...sent.at(-1) }, { id: "A", token: await tokenFor("A"), type: "value", op: "set", key: "count", value: 4 });
+  const { from, ...setMessage } = sent.at(-1);
+  assert.deepEqual(setMessage, { id: "A", token: await tokenFor("A"), type: "value", op: "set", key: "count", value: 4 });
+  assert.equal(typeof from, "string", "each page tags its own changes");
   assert.equal(context.GM_getResourceText("note"), "hi, there");
   let clicked = 0;
   const id = context.GM_registerMenuCommand("Do it", () => clicked++);
@@ -232,6 +234,16 @@ test("the runtime provides the APIs scripts from other managers often use", asyn
   context.GM_setValues({ a: 6 });
   await new Promise(resolve => setTimeout(resolve, 10));
   assert.deepEqual(changes, [["a", 1, 5, false], ["a", 5, undefined, false]]);
+  // A change from another tab arrives through the worker; the page's own change, passed back, is ignored.
+  const remoteId = context.GM_addValueChangeListener("shared", (key, before, after, remote) => changes.push([key, before, after, remote]));
+  const callback = context[Symbol.for("tailorscript.callback")];
+  callback("values", "remote", { key: "shared", value: { n: 1 }, deleted: false, from: "another-tab" });
+  callback("values", "remote", { key: "shared", value: 99, deleted: false, from: sent.find(message => message.type === "value").from });
+  callback("values", "remote", { key: "shared", deleted: true, from: "another-tab" });
+  // JSON turns the missing old and new values into null.
+  assert.deepEqual(JSON.parse(JSON.stringify(changes.slice(2))), [["shared", null, { n: 1 }, true], ["shared", { n: 1 }, null, true]]);
+  assert.equal(context.GM_getValues(["shared"]).shared, undefined, "the snapshot follows remote changes");
+  context.GM_removeValueChangeListener(remoteId);
   assert.ok(sent.some(message => message.type === "value" && message.op === "delete" && message.key === "a"));
 
   assert.equal(context.window.onurlchange, null, "scripts can detect urlchange support");

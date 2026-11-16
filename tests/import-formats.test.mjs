@@ -40,6 +40,19 @@ test("Tampermonkey backups keep state, values, site rules and order", async () =
   assert.equal(first.notes.length, 3);
 });
 
+test("macOS archive copies are ignored", async () => {
+  const finder = zip({
+    "One.user.js": script("One"),
+    "One.options.json": JSON.stringify({ settings: { enabled: true }, options: {} }),
+    "__MACOSX/._One.user.js": "\u0000\u0005\u0016\u0007binary",
+    "__MACOSX/._One.options.json": "\u0000\u0005\u0016\u0007binary",
+    "folder/._Two.user.js": "\u0000binary"
+  });
+  const { manager, entries } = await decodeImportFile("re-zipped.zip", finder);
+  assert.equal(manager, "Tampermonkey");
+  assert.deepEqual(entries.map(entry => headerValues(entry.source, "name")[0]), ["One"]);
+});
+
 test("Violentmonkey backups decode typed values matched by namespace and name", async () => {
   const uri = "ns-0aFirst-20one-0a";
   const bytes = zip({
@@ -78,6 +91,11 @@ test("any zip of .user.js files, Tampermonkey text exports, backups and single s
   assert.equal(headerValues(single.entries[0].source, "name")[0], "Single");
 
   await assert.rejects(decodeImportFile("x.zip", zip({ "notes.txt": "x" })), /no \.user\.js/);
+
+  const mixed = JSON.stringify({ created_by: "Tampermonkey", scripts: ["oops", null, { source: script("Real"), options: {} }] });
+  const cleaned = await decodeImportFile("tampermonkey.txt", new TextEncoder().encode(mixed));
+  assert.equal(cleaned.entries.length, 1);
+  assert.equal(cleaned.skipped, 2);
   await assert.rejects(decodeImportFile("x.json", new TextEncoder().encode('{"hello":1}')), /isn’t a backup/);
 });
 

@@ -171,7 +171,7 @@ When two manager tabs edit the same script, or the popup changes it while you ha
 | ScriptCat | Its Tampermonkey-style zip backup | As for Tampermonkey |
 | Greasemonkey and others | Any zip of `.user.js` files, or the files one at a time | Scripts |
 
-The review lists, for each script, what the conversion changed and any APIs it uses that Tailorscript doesn't support yet, such as `GM_cookie` or `GM_webRequest`; those parts of the script won't work. Tailorscript supports the APIs most scripts use, including `GM_addElement`, `GM_download`, `GM_log`, `GM_getValues`/`GM_setValues`/`GM_deleteValues`, value change listeners (for changes on the same page) and `window.onurlchange`.
+The review lists, for each script, what the conversion changed and any APIs it uses that Tailorscript doesn't support yet, such as `GM_cookie` or `GM_webRequest`; those parts of the script won't work. Tailorscript supports the APIs most scripts use, including `GM_addElement`, `GM_download`, `GM_log`, `GM_getValues`/`GM_setValues`/`GM_deleteValues`, value change listeners (including changes from other tabs) and `window.onurlchange`.
 - **Version history** keeps 25 previous versions per script. Label a version, compare it line by line with the editor, or load it and save to restore it.
 
 ## License

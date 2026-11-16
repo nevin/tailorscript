@@ -5,10 +5,11 @@ import { installChrome, userscript, storedScripts } from "./helpers/chrome.mjs";
 const managerUrl = "chrome-extension://test/manager/index.html";
 const popupUrl = "chrome-extension://test/popup/popup.html";
 let listeners;
+let calls;
 let local;
 
 before(async () => {
-  ({ listeners } = installChrome());
+  ({ listeners, calls } = installChrome());
   local = chrome.storage.local.data;
   await import("../src/background/service-worker.js");
 });
@@ -189,6 +190,24 @@ test("imports from other managers bring their values and stay off without site a
     chrome.permissions.contains = contains;
   }
   const blocked = storedScripts().find(script => script.name === "No access");
+  const withLibrary = named("Needs library").replace("// ==/UserScript==", "// @require     https://unreachable.example/lib.js\n// ==/UserScript==");
+  const result = await call({ type: "import", entries: [{ source: withLibrary }] });
+  assert.deepEqual(result.state.failedDownloads, ["Needs library"]);
   assert.equal(blocked.enabled, false);
   assert.equal(local[`values:${blocked.id}`], undefined, "values over 1 MB are left out");
+});
+
+test("a changed value is passed to the script's other tabs when it listens for changes", async () => {
+  const listening = userscript("void 0;", "// @grant GM_setValue\n// @grant GM_addValueChangeListener\n").replace("@name        Test", "@name        Listener");
+  const saved = await call({ type: "save", id: "listener", script: { source: listening, enabled: true }, expected: null });
+  assert.ok(saved.ok, saved.error);
+  await chrome.storage.session.set({ tabRuns: { 7: { scripts: { listener: { at: 1 } }, menus: {}, startedAt: 1 }, 8: { scripts: { other: { at: 1 } }, menus: {}, startedAt: 1 } } });
+  const before = calls.length;
+  await fromScript({ type: "value", op: "set", key: "theme", value: "dark", from: "page-1" }, { script: "listener", url: "https://a.com/", tab: { id: 9 } });
+  await settle();
+  const shared = calls.slice(before).filter(([name]) => name === "execute").map(([, injection]) => injection);
+  assert.equal(shared.length, 1, "only tabs where the script ran");
+  assert.deepEqual(shared[0].target, { tabId: 7, allFrames: true });
+  assert.equal(shared[0].worldId, "listener");
+  assert.match(shared[0].js[0].code, /"values", "remote", \{"key":"theme","value":"dark","deleted":false,"from":"page-1"\}/);
 });

@@ -4,6 +4,17 @@ All notable changes to Tailorscript are recorded here. Versions follow [Semantic
 
 ## [Unreleased]
 
+### Fixed
+- Backups compressed again with macOS Finder now import; the hidden `__MACOSX` copies it adds are ignored.
+- Entries in a Tampermonkey text export that aren't scripts are left out, and the review says how many.
+
+### Changed
+- `GM_addValueChangeListener` now hears changes made by the same script in other tabs, with `remote` set to true, so scripts can keep their tabs in step. The other tabs' `GM_getValue` snapshots follow those changes too.
+- After an import, the message names any scripts whose `@require` or `@resource` files couldn't be downloaded.
+
+### Developer
+- The accessibility check also covers the visual builder, inside a real DevTools window.
+
 ## [0.10.0]
 
 ### Added

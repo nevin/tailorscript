@@ -82,7 +82,17 @@ async function grantedScript(id, family, api) {
 
 const valueOperations = { get: ["getValue", "GM.getValue"], set: ["setValue", "GM.setValue"], delete: ["deleteValue", "GM.deleteValue"], list: ["listValues", "GM.listValues"] };
 
-async function handleValue(id, { op, key, value }) {
+// Passes a changed value to every tab where the script ran, for GM_addValueChangeListener. The change runs in the
+// script's own world in each frame; frames where it doesn't run ignore it, and so does the page that made it.
+async function shareValue(id, detail) {
+  const { tabRuns = {} } = await getSession("tabRuns");
+  const code = `globalThis[Symbol.for("tailorscript.callback")]?.("values", "remote", ${JSON.stringify(detail)});`;
+  await Promise.all(Object.entries(tabRuns).filter(([, tab]) => tab.scripts?.[id]).map(([tabId]) => chrome.userScripts.execute({
+    target: { tabId: Number(tabId), allFrames: true }, world: "USER_SCRIPT", worldId: id, js: [{ code }]
+  }).catch(ignore)));
+}
+
+async function handleValue(id, { op, key, value, from }) {
   if (!Object.hasOwn(valueOperations, op)) throw new Error("Unknown value operation.");
   const { metadata } = await grantedScript(id, ...valueOperations[op]);
   const storageKey = `values:${id}`;
@@ -97,6 +107,9 @@ async function handleValue(id, { op, key, value }) {
     if (JSON.stringify(values).length > valueBytes) throw new Error("This script’s stored values would exceed 1 MB.");
   }
   await chrome.storage.local.set({ [storageKey]: values });
+  if (allows(metadata.grants, "valueListener")) {
+    shareValue(id, { key, value: op === "delete" ? undefined : value, deleted: op === "delete", from }).catch(ignore);
+  }
   // Synchronous getters read a snapshot baked into the registration, so refresh it for the next page load.
   if (metadata.grants.some(grant => syncValueGrants.includes(grant))) scheduleSnapshot();
 }

@@ -668,3 +668,22 @@ test("builder detects labelled and custom form controls beyond the generic scan 
     await page.close();
   }
 });
+
+test("value change listeners hear changes made in another tab", async () => {
+  const source = header("Shared value", ["match http://localhost/*", "grant GM_setValue", "grant GM_addValueChangeListener"]) + `
+GM_addValueChangeListener("color", (key, before, after, remote) => document.documentElement.setAttribute("data-color", after + ":" + remote));
+document.documentElement.setAttribute("data-listening", "yes");
+if (location.search === "?set") GM_setValue("color", "green");`;
+  const saved = await send({ type: "save", id: "shared-value", script: { source, enabled: true }, expected: null });
+  assert.ok(saved.active.includes("shared-value"));
+  const listener = await openPage();
+  await attribute(listener, "data-listening");
+  // The worker learns which tabs run the script from their run reports.
+  await manager.waitForFunction(async () => Object.values((await chrome.storage.session.get("tabRuns")).tabRuns ?? {})
+    .some(tab => tab.scripts?.["shared-value"]), { polling: 100, timeout: 5000 });
+  const setter = await openPage("/page.html?set");
+  assert.equal(await attribute(setter, "data-color"), "green:false", "the tab that made the change hears it as local");
+  assert.equal(await attribute(listener, "data-color"), "green:true", "the other tab hears it as remote");
+  await setter.close();
+  await listener.close();
+});

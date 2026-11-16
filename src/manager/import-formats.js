@@ -173,7 +173,7 @@ function fromViolentmonkeyZip(files, text) {
 
 // Tampermonkey's text export holds every script in one JSON file, with sources sometimes base64-encoded.
 function fromTampermonkeyText(data) {
-  return data.scripts.map(script => {
+  return data.scripts.filter(script => object(script)).map(script => {
     let source = typeof script?.source === "string" ? script.source : "";
     if (source && !source.includes("==UserScript==")) {
       try {
@@ -202,13 +202,14 @@ function fromTailorscriptBackup(data) {
 /**
  * Works out what kind of file this is and returns its scripts, ready for the import review.
  * @param {string} name @param {Uint8Array} bytes
- * @returns {Promise<{ manager: string, entries: ImportEntry[] }>}
+ * @returns {Promise<{ manager: string, entries: ImportEntry[], skipped?: number }>} skipped counts entries that weren't scripts.
  */
 export async function decodeImportFile(name, bytes) {
   const decoder = new TextDecoder();
   let result;
   if (isZip(bytes)) {
-    const files = await readZip(bytes);
+    // macOS adds a hidden __MACOSX/._name copy of every file when it compresses a folder; they aren't scripts.
+    const files = new Map([...await readZip(bytes)].filter(([path]) => !/(^|\/)(__MACOSX\/|\._)/.test(path)));
     const text = path => decoder.decode(files.get(path));
     if (![...files.keys()].some(path => path.endsWith(userJs))) throw new Error("This archive has no .user.js scripts in it.");
     if (files.has("violentmonkey")) result = { manager: "Violentmonkey", entries: fromViolentmonkeyZip(files, text) };
@@ -219,8 +220,8 @@ export async function decodeImportFile(name, bytes) {
     if (/^\s*[{[]/.test(text)) {
       const data = parseJson(text, name);
       if (data?.version === 1 && Array.isArray(data.scripts)) result = { manager: "Tailorscript", entries: fromTailorscriptBackup(data) };
-      else if (Array.isArray(data?.scripts) && (data.created_by === "Tampermonkey" || data.scripts.some(script => "options" in (script ?? {})))) {
-        result = { manager: "Tampermonkey", entries: fromTampermonkeyText(data) };
+      else if (Array.isArray(data?.scripts) && (data.created_by === "Tampermonkey" || data.scripts.some(script => object(script) && "options" in script))) {
+        result = { manager: "Tampermonkey", entries: fromTampermonkeyText(data), skipped: data.scripts.filter(script => !object(script)).length };
       } else throw new Error("This JSON file isn’t a backup Tailorscript recognises.");
     } else result = { manager: "file", entries: [entry(text)] };
   }

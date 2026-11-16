@@ -104,13 +104,15 @@ export function installRuntime(config) {
   // GM_getValue and friends are synchronous, so they read a snapshot taken when the script was registered.
   const cache = config.values;
   const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
-  // Change listeners hear about changes this script makes on this page; changes from other tabs aren't reported.
+  // Change listeners hear about changes made on this page and, through the worker, in the script's other tabs.
+  // Each page tags its own changes, so it can ignore them when the worker passes them back.
   const listeners = new Map();
-  const changed = (key, before, after) => {
+  const pageKey = uniqueId();
+  const changed = (key, before, after, remote = false) => {
     for (const listener of listeners.values()) {
       if (listener.key !== key) continue;
       try {
-        listener.callback(key, clone(before), clone(after), false);
+        listener.callback(key, clone(before), clone(after), remote);
       } catch (error) {
         warn(error);
       }
@@ -121,7 +123,7 @@ export function installRuntime(config) {
     if (cache && op === "set") cache[key] = clone(value);
     if (cache && op === "delete") delete cache[key];
     if (listeners.size && (op === "set" || op === "delete")) changed(key, before, op === "set" ? value : undefined);
-    return call("value", { op, key, value });
+    return call("value", { op, key, value, from: pageKey });
   };
   // The batch functions take a list of keys, or an object of keys and fallback values for getValues.
   const keysOf = spec => Array.isArray(spec) ? spec.map(String) : Object.keys(spec ?? {});
@@ -169,6 +171,15 @@ export function installRuntime(config) {
       return id;
     };
     const remove = id => { listeners.delete(String(id)); };
+    callbacks.set("values:remote", ({ key, value, deleted, from }) => {
+      if (from === pageKey) return;
+      const before = cache?.[key];
+      if (cache) {
+        if (deleted) delete cache[key];
+        else cache[key] = clone(value);
+      }
+      changed(key, before, deleted ? undefined : value, true);
+    });
     define("GM_addValueChangeListener", add);
     define("GM_removeValueChangeListener", remove);
     api.addValueChangeListener = async (key, callback) => add(key, callback);

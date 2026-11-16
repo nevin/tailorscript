@@ -14,7 +14,7 @@ const elementDoc = "Creates an element with these attributes (textContent sets i
 const valuesGet = { params: ["keys: string[] | { [key]: fallback }"], doc: "Reads several stored values at once. Pass an object to give each key a fallback." };
 const valuesSet = { params: ["values: object"], doc: "Saves each key and value in the object." };
 const valuesDelete = { params: ["keys: string[]"], doc: "Deletes the values with these keys." };
-const listenerDoc = "Calls callback(key, oldValue, newValue, remote) when this script changes that stored value on this page. Returns an id for removing it. Changes made in other tabs aren't reported yet.";
+const listenerDoc = "Calls callback(key, oldValue, newValue, remote) when this script's stored value changes, here or in another tab (remote is true then). Returns an id for removing it.";
 const downloadParams = ["details: string | { url, name?, headers?, onload?, onerror? }", "name?: string"];
 const downloadDoc = "Downloads a file and saves it under name. Files from sites other than the page's own need @connect, like GM_xmlhttpRequest.";
 

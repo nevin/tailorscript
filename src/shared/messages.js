@@ -38,7 +38,7 @@ export const scriptMessages = {
   error: { message: "string?", line: "number?", column: "number?" },
   menu: { op: "string", commandId: "string", caption: "string?" },
   "xhr-abort": { requestId: "string" },
-  value: { op: "string", key: "string?" },
+  value: { op: "string", key: "string?", from: "string?" },
   xhr: { requestId: "string", request: { url: "string" } },
   notify: { callbackId: "string", notification: "object?" },
   "open-tab": { url: "string", active: "boolean?" },
