@@ -4,6 +4,8 @@ All notable changes to Tailorscript are recorded here. Versions follow [Semantic
 
 ## [Unreleased]
 
+## [0.11.0]
+
 ### Added
 - The visual builder reaches controls inside web components, such as Ionic's inputs and buttons, when listing, picking and running steps. Selectors step into a component with ` >>> `.
 - Builder steps no longer rely on a CSS selector alone. Each remembers its element's role, label, text and stable attributes such as `formcontrolname`; if the selector stops matching or matches the wrong element, the script finds the element by that description instead. Step cards say what they look for, such as “Finds the text box Email”.
@@ -16,14 +18,12 @@ All notable changes to Tailorscript are recorded here. Versions follow [Semantic
 - Imported Tampermonkey and Violentmonkey scripts that ask for no APIs run in the page, as they did there.
 - Selectors avoid the state classes Angular, Ionic and similar frameworks add and remove (`ng-pristine`, `ion-touched`, `has-focus`) and numbered ids such as `ion-input-0`, and prefer `formcontrolname` and component `label` attributes.
 - Recipes saved by earlier versions of the builder still open after the builder's own code changes, and are brought up to date when saved.
+- `GM_addValueChangeListener` now hears changes made by the same script in other tabs, with `remote` set to true, so scripts can keep their tabs in step. The other tabs' `GM_getValue` snapshots follow those changes too.
+- After an import, the message names any scripts whose `@require` or `@resource` files couldn't be downloaded.
 
 ### Fixed
 - Backups compressed again with macOS Finder now import; the hidden `__MACOSX` copies it adds are ignored.
 - Entries in a Tampermonkey text export that aren't scripts are left out, and the review says how many.
-
-### Changed
-- `GM_addValueChangeListener` now hears changes made by the same script in other tabs, with `remote` set to true, so scripts can keep their tabs in step. The other tabs' `GM_getValue` snapshots follow those changes too.
-- After an import, the message names any scripts whose `@require` or `@resource` files couldn't be downloaded.
 
 ### Developer
 - The accessibility check also covers the visual builder, inside a real DevTools window.
