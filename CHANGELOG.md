@@ -4,6 +4,8 @@ All notable changes to Tailorscript are recorded here. Versions follow [Semantic
 
 ## [Unreleased]
 
+## [0.8.0]
+
 ### Added
 - A welcome tab opens when Tailorscript is installed. It walks through Chrome's **Allow User Scripts** switch, confirms when it's on, and offers ways to start.
 - **Download as .user.js** and **Copy code** in a script's ⋯ menu, for sharing one script.

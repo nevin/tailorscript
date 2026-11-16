@@ -1,6 +1,6 @@
 {
   "name": "tailorscript",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "license": "MIT",
   "description": "Tailor websites with your own JavaScript. A private userscript manager for Chrome.",
